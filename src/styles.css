@@ -3,6 +3,17 @@
 @tailwind utilities;
 
 :root {
+  --color-app-background: 16 19 26;
+  --color-app-panel: 23 27 36;
+  --color-app-panel-soft: 32 38 54;
+  --color-app-border: 47 56 72;
+  --color-app-text: 232 237 245;
+  --color-app-muted: 154 167 184;
+  --color-app-accent: 155 183 255;
+  --color-app-accent-soft: 38 54 87;
+  --color-app-success: 125 223 179;
+  --color-app-warning: 255 209 102;
+  --color-app-error: 255 154 162;
   font-family: 'Geist Sans', system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
@@ -14,6 +25,23 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='light'] {
+  --color-app-background: 248 250 252;
+  --color-app-panel: 255 255 255;
+  --color-app-panel-soft: 241 245 249;
+  --color-app-border: 219 228 238;
+  --color-app-text: 30 41 59;
+  --color-app-muted: 100 116 139;
+  --color-app-accent: 124 156 255;
+  --color-app-accent-soft: 231 237 255;
+  --color-app-success: 107 207 159;
+  --color-app-warning: 246 199 107;
+  --color-app-error: 242 139 130;
+  color-scheme: light;
+  background: #f8fafc;
+  color: #1e293b;
 }
 
 body {

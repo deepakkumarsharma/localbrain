@@ -4,7 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 const sections = ['Files', 'Search', 'Wiki'];
 
 export function Sidebar() {
-  const activePanel = useAppStore((state) => state.activePanel);
+  const { activePanel, theme, toggleTheme } = useAppStore();
 
   return (
     <aside className="flex h-full flex-col border-r border-app-border bg-app-panel">
@@ -35,8 +35,18 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-app-border px-4 py-3 text-xs text-app-muted">
-        Active: {activePanel}
+      <div className="mt-auto space-y-3 border-t border-app-border px-4 py-3 text-xs text-app-muted">
+        <button
+          className="flex h-8 w-full items-center justify-between rounded-md border border-app-border px-2 text-left font-medium text-app-text hover:bg-app-panelSoft"
+          type="button"
+          onClick={toggleTheme}
+        >
+          <span className="capitalize">{theme} theme</span>
+          <kbd className="rounded border border-app-border px-1.5 py-0.5 font-mono text-[11px] text-app-muted">
+            {navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl'} Shift T
+          </kbd>
+        </button>
+        <p>Active: {activePanel}</p>
       </div>
     </aside>
   );
