@@ -20,6 +20,10 @@ export default function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) {
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 't') {
         event.preventDefault();
         toggleTheme();
