@@ -1,4 +1,4 @@
 mod schema;
 mod store;
 
-pub use store::{GraphIngestSummary, GraphStore};
+pub use store::{GraphError, GraphIngestSummary, GraphStore};

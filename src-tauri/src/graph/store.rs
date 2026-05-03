@@ -46,7 +46,9 @@ impl GraphStore {
             SystemConfig::default(),
         )?;
 
-        Ok(Self { database })
+        let store = Self { database };
+        store.init_schema()?;
+        Ok(store)
     }
 
     pub fn open_default<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<Self, GraphError> {
@@ -77,108 +79,123 @@ impl GraphStore {
         &self,
         parsed: &ParsedFile,
     ) -> Result<GraphIngestSummary, GraphError> {
-        self.init_schema()?;
         let conn = self.connect()?;
         let updated_at = current_timestamp()?;
         let language = language_label(parsed.language).to_string();
 
-        self.clear_file_with_connection(&conn, &parsed.path)?;
+        conn.query("BEGIN TRANSACTION")?;
 
-        let mut upsert_file = conn.prepare(
-            "
-            MERGE (file:File {path: $path})
-            ON CREATE SET file.language = $language, file.updated_at = $updated_at
-            ON MATCH SET file.language = $language, file.updated_at = $updated_at
-            ",
-        )?;
-        conn.execute(
-            &mut upsert_file,
-            vec![
-                ("path", parsed.path.clone().into()),
-                ("language", language.clone().into()),
-                ("updated_at", updated_at.into()),
-            ],
-        )?;
+        let result = (|| -> Result<GraphIngestSummary, GraphError> {
+            self.clear_file_with_connection(&conn, &parsed.path)?;
 
-        let mut upsert_symbol = conn.prepare(
-            "
-            MERGE (symbol:Symbol {id: $id})
-            ON CREATE SET
-              symbol.file_path = $file_path,
-              symbol.name = $name,
-              symbol.kind = $kind,
-              symbol.parent = $parent,
-              symbol.source = $source,
-              symbol.start_line = $start_line,
-              symbol.start_column = $start_column,
-              symbol.end_line = $end_line,
-              symbol.end_column = $end_column
-            ON MATCH SET
-              symbol.file_path = $file_path,
-              symbol.name = $name,
-              symbol.kind = $kind,
-              symbol.parent = $parent,
-              symbol.source = $source,
-              symbol.start_line = $start_line,
-              symbol.start_column = $start_column,
-              symbol.end_line = $end_line,
-              symbol.end_column = $end_column
-            ",
-        )?;
-        let mut link_contains = conn.prepare(
-            "
-            MATCH (file:File), (symbol:Symbol)
-            WHERE file.path = $file_path AND symbol.id = $symbol_id
-            MERGE (file)-[:CONTAINS]->(symbol)
-            ",
-        )?;
-
-        for symbol in &parsed.symbols {
-            let symbol_id = symbol_id(&parsed.path, symbol);
-            conn.execute(
-                &mut upsert_symbol,
-                vec![
-                    ("id", symbol_id.clone().into()),
-                    ("file_path", parsed.path.clone().into()),
-                    ("name", symbol.name.clone().into()),
-                    ("kind", kind_label(symbol.kind).to_string().into()),
-                    ("parent", optional_string(&symbol.parent)),
-                    ("source", optional_string(&symbol.source)),
-                    ("start_line", usize_to_i64(symbol.range.start_line).into()),
-                    (
-                        "start_column",
-                        usize_to_i64(symbol.range.start_column).into(),
-                    ),
-                    ("end_line", usize_to_i64(symbol.range.end_line).into()),
-                    ("end_column", usize_to_i64(symbol.range.end_column).into()),
-                ],
+            let mut upsert_file = conn.prepare(
+                "
+                MERGE (file:File {path: $path})
+                ON CREATE SET file.language = $language, file.updated_at = $updated_at
+                ON MATCH SET file.language = $language, file.updated_at = $updated_at
+                ",
             )?;
             conn.execute(
-                &mut link_contains,
+                &mut upsert_file,
                 vec![
-                    ("file_path", parsed.path.clone().into()),
-                    ("symbol_id", symbol_id.into()),
+                    ("path", parsed.path.clone().into()),
+                    ("language", language.clone().into()),
+                    ("updated_at", updated_at.into()),
                 ],
             )?;
+
+            let mut upsert_symbol = conn.prepare(
+                "
+                MERGE (symbol:Symbol {id: $id})
+                ON CREATE SET
+                  symbol.file_path = $file_path,
+                  symbol.name = $name,
+                  symbol.kind = $kind,
+                  symbol.parent = $parent,
+                  symbol.source = $source,
+                  symbol.start_line = $start_line,
+                  symbol.start_column = $start_column,
+                  symbol.end_line = $end_line,
+                  symbol.end_column = $end_column
+                ON MATCH SET
+                  symbol.file_path = $file_path,
+                  symbol.name = $name,
+                  symbol.kind = $kind,
+                  symbol.parent = $parent,
+                  symbol.source = $source,
+                  symbol.start_line = $start_line,
+                  symbol.start_column = $start_column,
+                  symbol.end_line = $end_line,
+                  symbol.end_column = $end_column
+                ",
+            )?;
+            let mut link_contains = conn.prepare(
+                "
+                MATCH (file:File), (symbol:Symbol)
+                WHERE file.path = $file_path AND symbol.id = $symbol_id
+                MERGE (file)-[:CONTAINS]->(symbol)
+                ",
+            )?;
+
+            for symbol in &parsed.symbols {
+                let symbol_id = symbol_id(&parsed.path, symbol);
+                conn.execute(
+                    &mut upsert_symbol,
+                    vec![
+                        ("id", symbol_id.clone().into()),
+                        ("file_path", parsed.path.clone().into()),
+                        ("name", symbol.name.clone().into()),
+                        ("kind", kind_label(symbol.kind).to_string().into()),
+                        ("parent", optional_string(&symbol.parent)),
+                        ("source", optional_string(&symbol.source)),
+                        ("start_line", usize_to_i64(symbol.range.start_line).into()),
+                        (
+                            "start_column",
+                            usize_to_i64(symbol.range.start_column).into(),
+                        ),
+                        ("end_line", usize_to_i64(symbol.range.end_line).into()),
+                        ("end_column", usize_to_i64(symbol.range.end_column).into()),
+                    ],
+                )?;
+                conn.execute(
+                    &mut link_contains,
+                    vec![
+                        ("file_path", parsed.path.clone().into()),
+                        ("symbol_id", symbol_id.into()),
+                    ],
+                )?;
+            }
+
+            let contains_count =
+                self.count_contains_for_file_with_connection(&conn, &parsed.path)?;
+
+            Ok(GraphIngestSummary {
+                file_path: parsed.path.clone(),
+                language,
+                symbol_count: parsed.symbols.len(),
+                contains_count,
+                symbol_names: parsed
+                    .symbols
+                    .iter()
+                    .map(|symbol| symbol.name.clone())
+                    .collect(),
+            })
+        })();
+
+        match result {
+            Ok(summary) => {
+                conn.query("COMMIT")?;
+                Ok(summary)
+            }
+            Err(e) => {
+                eprintln!("KuzuDB Upsert Error for {}: {:?}", parsed.path, e);
+                let _ = conn.query("ROLLBACK");
+                Err(e)
+            }
         }
-
-        let contains_count = self.count_contains_for_file_with_connection(&conn, &parsed.path)?;
-
-        Ok(GraphIngestSummary {
-            file_path: parsed.path.clone(),
-            language,
-            symbol_count: parsed.symbols.len(),
-            contains_count,
-            symbol_names: parsed
-                .symbols
-                .iter()
-                .map(|symbol| symbol.name.clone())
-                .collect(),
-        })
     }
 
     pub fn get_symbols_for_file(&self, path: &str) -> Result<Vec<CodeSymbol>, GraphError> {
-        self.init_schema()?;
         let conn = self.connect()?;
         let mut query = conn.prepare(
             "
@@ -216,9 +233,7 @@ impl GraphStore {
         Ok(symbols)
     }
 
-    #[cfg(test)]
     pub fn clear_file(&self, path: &str) -> Result<(), GraphError> {
-        self.init_schema()?;
         let conn = self.connect()?;
         self.clear_file_with_connection(&conn, path)
     }

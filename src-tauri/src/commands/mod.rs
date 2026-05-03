@@ -1,4 +1,6 @@
 use crate::graph::{GraphIngestSummary, GraphStore};
+use crate::indexer::{IndexFileSummary, IndexPathSummary};
+use crate::metadata::{FileChangeStatus, FileMetadata, IndexRunSummary, MetadataStore};
 use crate::parser::CodeSymbol;
 use crate::parser::{parse_file, ParsedFile};
 
@@ -31,5 +33,69 @@ pub fn get_graph_symbols(
 ) -> Result<Vec<CodeSymbol>, String> {
     store
         .get_symbols_for_file(&path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn record_file_metadata(
+    path: String,
+    store: tauri::State<'_, MetadataStore>,
+) -> Result<FileMetadata, String> {
+    store
+        .record_file_metadata(path)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn get_file_metadata(
+    path: String,
+    store: tauri::State<'_, MetadataStore>,
+) -> Result<Option<FileMetadata>, String> {
+    store
+        .get_file(&path)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn check_file_changed(
+    path: String,
+    store: tauri::State<'_, MetadataStore>,
+) -> Result<FileChangeStatus, String> {
+    store
+        .classify_file(path)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn index_file(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+    graph_store: tauri::State<'_, GraphStore>,
+) -> Result<IndexFileSummary, String> {
+    crate::indexer::index_file(path, &metadata_store, &graph_store)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn index_path(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+    graph_store: tauri::State<'_, GraphStore>,
+) -> Result<IndexPathSummary, String> {
+    crate::indexer::index_path(path, &metadata_store, &graph_store)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn get_index_status(
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<Option<IndexRunSummary>, String> {
+    crate::indexer::get_index_status(&metadata_store)
+        .await
         .map_err(|error| error.to_string())
 }
