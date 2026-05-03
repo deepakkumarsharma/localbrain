@@ -9,7 +9,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full min-w-[260px] max-w-[380px] flex-col bg-app-panel min-[1440px]:min-w-[400px] min-[1440px]:max-w-[600px]">
       <div className="border-b border-app-border px-6 py-5">
-        <h1 className="text-xl font-semibold leading-tight">Localbrain</h1>
+        <h1 className="text-xl font-semibold leading-tight">Local Brain</h1>
         <p className="mt-1.5 text-sm font-medium text-app-muted">Local code intelligence</p>
       </div>
 

@@ -2,7 +2,7 @@
 name = "localbrain"
 version = "0.1.0"
 description = "Local-first codebase intelligence platform"
-authors = ["Localbrain"]
+authors = ["Live Brain"]
 edition = "2021"
 rust-version = "1.75"
 

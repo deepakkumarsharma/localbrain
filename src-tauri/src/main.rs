@@ -25,5 +25,5 @@ fn main() {
             start_watcher
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Localbrain");
+        .expect("failed to run Local Brain");
 }
