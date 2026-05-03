@@ -49,8 +49,18 @@ impl GraphStore {
         Ok(Self { database })
     }
 
-    pub fn open_default() -> Result<Self, GraphError> {
-        Self::open(".localbrain/graph")
+    pub fn open_default<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<Self, GraphError> {
+        use tauri::Manager;
+        let app_data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| GraphError::InvalidValue {
+                field: "app_data_dir",
+                value: "failed to resolve app data directory".to_string(),
+            })?;
+
+        let path = app_data_dir.join(".localbrain").join("graph");
+        Self::open(path)
     }
 
     pub fn init_schema(&self) -> Result<(), GraphError> {

@@ -13,9 +13,11 @@ pub fn parse_source_file(path: String) -> Result<ParsedFile, String> {
 }
 
 #[tauri::command]
-pub fn index_file_to_graph(path: String) -> Result<GraphIngestSummary, String> {
+pub fn index_file_to_graph(
+    path: String,
+    store: tauri::State<GraphStore>,
+) -> Result<GraphIngestSummary, String> {
     let parsed = parse_file(path).map_err(|error| error.to_string())?;
-    let store = GraphStore::open_default().map_err(|error| error.to_string())?;
 
     store
         .upsert_parsed_file(&parsed)
@@ -23,9 +25,10 @@ pub fn index_file_to_graph(path: String) -> Result<GraphIngestSummary, String> {
 }
 
 #[tauri::command]
-pub fn get_graph_symbols(path: String) -> Result<Vec<CodeSymbol>, String> {
-    let store = GraphStore::open_default().map_err(|error| error.to_string())?;
-
+pub fn get_graph_symbols(
+    path: String,
+    store: tauri::State<GraphStore>,
+) -> Result<Vec<CodeSymbol>, String> {
     store
         .get_symbols_for_file(&path)
         .map_err(|error| error.to_string())
