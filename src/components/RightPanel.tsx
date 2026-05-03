@@ -84,8 +84,8 @@ export function RightPanel() {
     try {
       const summary = await indexFile(DEMO_SOURCE_PATH);
       setIndexFileResult(summary);
-      const symbols = await getGraphSymbols(DEMO_SOURCE_PATH);
       if (summary.graph) {
+        const symbols = await getGraphSymbols(DEMO_SOURCE_PATH);
         setGraphResult(summary.graph, symbols);
       }
     } catch (error) {

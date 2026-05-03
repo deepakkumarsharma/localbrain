@@ -75,6 +75,7 @@ export const useAppStore = create<AppState>((set) => ({
       indexFileSummary: summary,
       metadata: summary.metadata,
       graphSummary: summary.graph,
+      graphSymbols: [],
       indexError: null,
       metadataError: null,
       graphError: null,

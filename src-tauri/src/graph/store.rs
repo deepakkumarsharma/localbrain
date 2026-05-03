@@ -267,6 +267,14 @@ impl GraphStore {
         )?;
         conn.execute(&mut delete_symbols, vec![("path", path.to_string().into())])?;
 
+        let mut delete_file = conn.prepare(
+            "
+            MATCH (file:File {path: $path})
+            DELETE file
+            ",
+        )?;
+        conn.execute(&mut delete_file, vec![("path", path.to_string().into())])?;
+
         Ok(())
     }
 
@@ -294,7 +302,7 @@ fn current_timestamp() -> Result<String, GraphError> {
     Ok(SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| GraphError::SystemClock)?
-        .as_secs()
+        .as_millis()
         .to_string())
 }
 

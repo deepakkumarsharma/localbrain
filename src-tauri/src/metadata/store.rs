@@ -374,13 +374,13 @@ pub fn current_timestamp() -> Result<String, MetadataError> {
     Ok(SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| MetadataError::SystemClock)?
-        .as_secs()
+        .as_millis()
         .to_string())
 }
 
 fn timestamp_from_system_time(time: SystemTime) -> String {
     time.duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs().to_string())
+        .map(|duration| duration.as_millis().to_string())
         .unwrap_or_else(|_| "0".to_string())
 }
 
