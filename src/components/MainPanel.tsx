@@ -1,8 +1,13 @@
+import type { FormEvent } from 'react';
 import { Send } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
 export function MainPanel() {
   const { activePanel, setActivePanel } = useAppStore();
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+  }
 
   return (
     <main className="flex h-full min-w-0 flex-col bg-app-background">
@@ -35,7 +40,7 @@ export function MainPanel() {
         </div>
       </section>
 
-      <form className="border-t border-app-border bg-app-panel px-4 py-3">
+      <form className="border-t border-app-border bg-app-panel px-4 py-3" onSubmit={handleSubmit}>
         <div className="flex items-center gap-3 rounded-md border border-app-border bg-app-panelSoft px-3 py-2">
           <input
             className="min-w-0 flex-1 bg-transparent text-sm leading-6 text-app-text outline-none placeholder:text-app-muted"
