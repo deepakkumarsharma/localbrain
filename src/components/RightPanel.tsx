@@ -1,10 +1,22 @@
-import { Code2, ExternalLink } from 'lucide-react';
+import { Code2, Database, ExternalLink } from 'lucide-react';
+import { getGraphSymbols, indexFileToGraph } from '../lib/graph';
 import { parseSourceFile } from '../lib/parser';
 import { useAppStore } from '../store/useAppStore';
 
 export function RightPanel() {
-  const { appVersion, lastFileChange, parsedFile, parserError, setParsedFile, setParserError } =
-    useAppStore();
+  const {
+    appVersion,
+    lastFileChange,
+    parsedFile,
+    parserError,
+    graphSummary,
+    graphSymbols,
+    graphError,
+    setParsedFile,
+    setParserError,
+    setGraphResult,
+    setGraphError,
+  } = useAppStore();
 
   async function handleParseApp() {
     try {
@@ -12,6 +24,16 @@ export function RightPanel() {
       setParsedFile(parsed);
     } catch (error) {
       setParserError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleIndexApp() {
+    try {
+      const summary = await indexFileToGraph('src/App.tsx');
+      const symbols = await getGraphSymbols('src/App.tsx');
+      setGraphResult(summary, symbols);
+    } catch (error) {
+      setGraphError(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -71,6 +93,36 @@ export function RightPanel() {
         </div>
 
         <div>
+          <h3 className="text-[13px] font-semibold uppercase text-app-muted">Graph</h3>
+          {graphSummary ? (
+            <div className="mt-3 space-y-3">
+              <p className="break-all text-[15px] leading-7 text-app-muted">
+                {graphSummary.filePath} · {graphSummary.symbolCount} symbols ·{' '}
+                {graphSummary.containsCount} contains edges
+              </p>
+              <div className="max-h-48 space-y-2 overflow-auto pr-1">
+                {graphSymbols.map((symbol) => (
+                  <div
+                    key={`graph-${symbol.kind}-${symbol.name}-${symbol.range.startLine}`}
+                    className="rounded-md border border-app-border px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium text-app-text">{symbol.name}</span>
+                    <span className="ml-2 text-app-muted">
+                      {symbol.kind} · L{symbol.range.startLine}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-[15px] leading-7 text-app-muted">No graph data loaded yet.</p>
+          )}
+          {graphError ? (
+            <p className="mt-3 break-all text-[15px] leading-7 text-red-400">{graphError}</p>
+          ) : null}
+        </div>
+
+        <div>
           <h3 className="text-[13px] font-semibold uppercase text-app-muted">Actions</h3>
           <div className="mt-3 flex flex-col gap-2">
             <button
@@ -80,6 +132,14 @@ export function RightPanel() {
             >
               <Code2 className="h-4 w-4" aria-hidden="true" />
               Parse App.tsx
+            </button>
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-app-border px-3 text-[15px] font-medium text-app-text hover:bg-app-panelSoft"
+              type="button"
+              onClick={handleIndexApp}
+            >
+              <Database className="h-4 w-4" aria-hidden="true" />
+              Index App.tsx
             </button>
             <button
               className="inline-flex h-9 items-center gap-2 rounded-md border border-app-border px-3 text-[15px] font-medium text-app-text hover:bg-app-panelSoft"
