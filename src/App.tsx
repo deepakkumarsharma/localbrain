@@ -4,6 +4,7 @@ import { MainPanel } from './components/MainPanel';
 import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
 import { useAppStore } from './store/useAppStore';
+import { initFileWatcher } from './lib/fileWatcher';
 
 export default function App() {
   const { setAppVersion, theme, toggleTheme } = useAppStore();
@@ -13,6 +14,22 @@ export default function App() {
       .then(setAppVersion)
       .catch(() => setAppVersion('unknown'));
   }, [setAppVersion]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void initFileWatcher('.')
+      .then((ul) => {
+        unlisten = ul;
+      })
+      .catch(console.error);
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
