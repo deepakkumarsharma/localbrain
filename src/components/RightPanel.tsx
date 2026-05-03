@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 
 export function RightPanel() {
   const appVersion = useAppStore((state) => state.appVersion);
+  const lastFileChange = useAppStore((state) => state.lastFileChange);
 
   return (
     <aside className="flex h-full flex-col border-l border-app-border bg-app-panel">
@@ -15,6 +16,13 @@ export function RightPanel() {
         <div>
           <h3 className="text-xs font-medium uppercase text-app-muted">Citations</h3>
           <p className="mt-2 text-sm leading-6 text-app-muted">No citations yet.</p>
+        </div>
+
+        <div>
+          <h3 className="text-xs font-medium uppercase text-app-muted">Watcher</h3>
+          <p className="mt-2 break-all text-sm leading-6 text-app-muted">
+            {lastFileChange ?? 'No file changes detected yet.'}
+          </p>
         </div>
 
         <div>
