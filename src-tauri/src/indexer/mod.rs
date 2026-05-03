@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
@@ -127,9 +128,12 @@ pub async fn index_path(
     graph_store: &GraphStore,
 ) -> Result<IndexPathSummary, IndexerError> {
     let requested_path = path.as_ref();
+    let paths = indexable_paths(requested_path, metadata_store)?;
     let run_id = metadata_store.begin_index_run().await?;
+
+    let normalized_root = metadata_store.normalize_path(requested_path);
     let mut summary = IndexPathSummary {
-        path: metadata_store.normalize_path(requested_path),
+        path: normalized_root.clone(),
         files_seen: 0,
         files_changed: 0,
         files_skipped: 0,
@@ -139,7 +143,53 @@ pub async fn index_path(
         files: Vec::new(),
     };
 
-    let paths = indexable_paths(requested_path, metadata_store)?;
+    // Reconciliation phase: identify and mark deleted files
+    if let Ok(previously_tracked) = metadata_store.get_tracked_files(&normalized_root).await {
+        let discovered_set: HashSet<String> = paths
+            .iter()
+            .map(|p| metadata_store.normalize_path(p))
+            .collect();
+
+        for path_str in previously_tracked {
+            if !discovered_set.contains(&path_str) {
+                summary.files_deleted += 1;
+                summary.files_changed += 1;
+
+                if let Err(e) = graph_store.clear_file(&path_str) {
+                    summary
+                        .errors
+                        .push(format!("Failed to clear graph for {}: {}", path_str, e));
+                }
+
+                match metadata_store.get_file(&path_str).await {
+                    Ok(Some(metadata)) => {
+                        if let Err(e) = metadata_store.mark_file_deleted(&path_str).await {
+                            summary.errors.push(format!(
+                                "Failed to mark metadata deleted for {}: {}",
+                                path_str, e
+                            ));
+                        }
+
+                        summary.files.push(IndexFileSummary {
+                            path: path_str,
+                            status: FileChangeStatus::Deleted,
+                            skipped: false,
+                            metadata: Some(metadata),
+                            graph: None,
+                        });
+                    }
+                    _ => {
+                        if let Err(e) = metadata_store.mark_file_deleted(&path_str).await {
+                            summary.errors.push(format!(
+                                "Failed to mark metadata deleted for {}: {}",
+                                path_str, e
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     for path in paths {
         summary.files_seen += 1;

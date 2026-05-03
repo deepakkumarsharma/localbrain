@@ -6,13 +6,12 @@ import { parseSourceFile } from './parser';
 import { getGraphSymbols } from './graph';
 
 export async function initFileWatcher(projectPath: string) {
-  const store = useAppStore.getState();
-
   console.log('Initializing file watcher for:', projectPath);
   try {
     await invoke('start_watcher', { path: projectPath });
 
     const unlisten = await listen<string>('file-changed', async (event) => {
+      const store = useAppStore.getState();
       console.log('File changed event received:', event.payload);
       const filePath = event.payload;
 
@@ -35,10 +34,9 @@ export async function initFileWatcher(projectPath: string) {
           store.setParsedFile(parsed);
 
           // Also update graph symbols view if applicable
-          const symbols = await getGraphSymbols(filePath);
-          const graphSummary = indexResult.graph || store.graphSummary;
-          if (graphSummary) {
-            store.setGraphResult(graphSummary, symbols);
+          if (indexResult.graph) {
+            const symbols = await getGraphSymbols(filePath);
+            store.setGraphResult(indexResult.graph, symbols);
           }
         }
       } catch (error: unknown) {

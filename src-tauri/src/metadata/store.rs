@@ -189,8 +189,29 @@ impl MetadataStore {
         &self,
         path: impl AsRef<Path>,
     ) -> Result<FileMetadata, MetadataError> {
-        let status = self.classify_file(path.as_ref()).await?;
-        let mut metadata = self.scan_file(path).await?;
+        let path_ref = path.as_ref();
+        let status = self.classify_file(path_ref).await?;
+        let normalized_path = normalize_display_path(path_ref);
+
+        if status == FileChangeStatus::Deleted {
+            let existing = self.get_file(&normalized_path).await?;
+            let metadata = FileMetadata {
+                path: normalized_path,
+                language: existing.as_ref().and_then(|e| e.language.clone()),
+                size_bytes: existing.as_ref().map(|e| e.size_bytes).unwrap_or(0),
+                modified_at: existing.as_ref().and_then(|e| e.modified_at.clone()),
+                content_hash: existing
+                    .as_ref()
+                    .map(|e| e.content_hash.clone())
+                    .unwrap_or_default(),
+                last_indexed_at: existing.as_ref().and_then(|e| e.last_indexed_at.clone()),
+                status,
+            };
+            self.upsert_file(&metadata).await?;
+            return Ok(metadata);
+        }
+
+        let mut metadata = self.scan_file(path_ref).await?;
         if let Some(existing) = self.get_file(&metadata.path).await? {
             metadata.last_indexed_at = existing.last_indexed_at;
         }
@@ -204,7 +225,29 @@ impl MetadataStore {
         &self,
         path: impl AsRef<Path>,
     ) -> Result<FileMetadata, MetadataError> {
-        let mut metadata = self.scan_file(path).await?;
+        let path_ref = path.as_ref();
+        let status = self.classify_file(path_ref).await?;
+
+        if status == FileChangeStatus::Deleted {
+            let normalized_path = normalize_display_path(path_ref);
+            let existing = self.get_file(&normalized_path).await?;
+            let metadata = FileMetadata {
+                path: normalized_path,
+                language: existing.as_ref().and_then(|e| e.language.clone()),
+                size_bytes: existing.as_ref().map(|e| e.size_bytes).unwrap_or(0),
+                modified_at: existing.as_ref().and_then(|e| e.modified_at.clone()),
+                content_hash: existing
+                    .as_ref()
+                    .map(|e| e.content_hash.clone())
+                    .unwrap_or_default(),
+                last_indexed_at: Some(current_timestamp()?),
+                status: FileChangeStatus::Deleted,
+            };
+            self.upsert_file(&metadata).await?;
+            return Ok(metadata);
+        }
+
+        let mut metadata = self.scan_file(path_ref).await?;
         metadata.status = FileChangeStatus::Unchanged;
         metadata.last_indexed_at = Some(current_timestamp()?);
         self.upsert_file(&metadata).await?;
@@ -221,6 +264,26 @@ impl MetadataStore {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn get_tracked_files(&self, prefix: &str) -> Result<Vec<String>, MetadataError> {
+        let rows = sqlx::query(
+            "
+            SELECT path FROM files
+            WHERE (path = ? OR path LIKE ?) AND status != ?
+            ",
+        )
+        .bind(prefix)
+        .bind(format!("{}/%", prefix))
+        .bind(FileChangeStatus::Deleted.as_str())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut paths = Vec::new();
+        for row in rows {
+            paths.push(row.try_get("path")?);
+        }
+        Ok(paths)
     }
 
     pub async fn begin_index_run(&self) -> Result<i64, MetadataError> {
@@ -348,6 +411,8 @@ fn normalize_display_path(path: &Path) -> String {
         let root = project_root();
         if let Ok(relative) = path.strip_prefix(&root) {
             return normalize_relative_path(relative);
+        } else {
+            return path.to_string_lossy().to_string();
         }
     }
 
@@ -356,12 +421,15 @@ fn normalize_display_path(path: &Path) -> String {
 
 fn normalize_relative_path(path: &Path) -> String {
     let mut parts = Vec::new();
+    let mut leading_parents = 0;
 
     for component in path.components() {
         match component {
             Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
             Component::ParentDir => {
-                parts.pop();
+                if parts.pop().is_none() {
+                    leading_parents += 1;
+                }
             }
             Component::Normal(value) => {
                 parts.push(value.to_string_lossy().to_string());
@@ -369,7 +437,13 @@ fn normalize_relative_path(path: &Path) -> String {
         }
     }
 
-    parts.join("/")
+    let mut result = Vec::with_capacity(leading_parents + parts.len());
+    for _ in 0..leading_parents {
+        result.push("..".to_string());
+    }
+    result.extend(parts);
+
+    result.join("/")
 }
 
 #[cfg(test)]
