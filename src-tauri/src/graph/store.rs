@@ -285,7 +285,7 @@ fn current_timestamp() -> Result<String, GraphError> {
 
 fn symbol_id(file_path: &str, symbol: &CodeSymbol) -> String {
     format!(
-        "{}::{}::{}::{}:{}",
+        "{}::{}::{}::{}::{}",
         file_path,
         kind_label(symbol.kind),
         symbol.name,
@@ -445,6 +445,27 @@ mod tests {
             .expect("query should work");
 
         assert!(symbols.is_empty());
+    }
+
+    #[test]
+    fn symbol_id_uses_consistent_separators() {
+        let symbol = CodeSymbol {
+            name: "App:Shell".to_string(),
+            kind: SymbolKind::Component,
+            parent: None,
+            source: None,
+            range: SourceRange {
+                start_line: 3,
+                start_column: 16,
+                end_line: 5,
+                end_column: 1,
+            },
+        };
+
+        assert_eq!(
+            super::symbol_id("src/App.tsx", &symbol),
+            "src/App.tsx::component::App:Shell::3::16"
+        );
     }
 
     fn parsed_file() -> ParsedFile {
