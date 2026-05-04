@@ -55,3 +55,31 @@ button,
 input {
   font: inherit;
 }
+
+.app-scrollbar {
+  scrollbar-color: rgb(var(--color-app-border)) transparent;
+  scrollbar-width: thin;
+}
+
+.app-scrollbar::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-app-border));
+  border: 2px solid rgb(var(--color-app-panel));
+  border-radius: 999px;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-app-muted) / 0.75);
+}
+
+.app-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}

@@ -5,6 +5,9 @@ import { useAppStore } from '../store/useAppStore';
 import { parseSourceFile } from './parser';
 import { getGraphSymbols } from './graph';
 
+// The backend watcher emits several useful file types, but incremental graph indexing is JS/TS-only.
+const SOURCE_FILE_PATTERN = /\.(jsx?|tsx?)$/i;
+
 export async function initFileWatcher(projectPath: string) {
   console.log('Initializing file watcher for:', projectPath);
   try {
@@ -16,6 +19,10 @@ export async function initFileWatcher(projectPath: string) {
       const filePath = event.payload;
 
       store.setLastFileChange(filePath);
+
+      if (!SOURCE_FILE_PATTERN.test(filePath)) {
+        return;
+      }
 
       // Small delay to allow editor to finish writing/unlocking the file
       await new Promise((resolve) => setTimeout(resolve, 50));

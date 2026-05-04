@@ -3,6 +3,8 @@ import type { GraphIngestSummary } from '../lib/graph';
 import type { IndexFileSummary, IndexPathSummary, IndexRunSummary } from '../lib/indexer';
 import type { FileMetadata } from '../lib/metadata';
 import type { ParsedFile } from '../lib/parser';
+import type { SearchIndexSummary, SearchResult } from '../lib/search';
+import type { WikiSummary } from '../lib/wiki';
 
 type ActivePanel = 'chat' | 'graph';
 type Theme = 'dark' | 'light';
@@ -24,6 +26,12 @@ interface AppState {
   indexPathSummary: IndexPathSummary | null;
   indexRun: IndexRunSummary | null;
   indexError: string | null;
+  wikiSummary: WikiSummary | null;
+  wikiError: string | null;
+  searchIndexSummary: SearchIndexSummary | null;
+  searchResults: SearchResult[];
+  searchQuery: string;
+  searchError: string | null;
   setActivePanel: (panel: ActivePanel) => void;
   setAppVersion: (version: string) => void;
   setTheme: (theme: Theme) => void;
@@ -39,6 +47,11 @@ interface AppState {
   setIndexPathResult: (summary: IndexPathSummary) => void;
   setIndexRun: (run: IndexRunSummary | null) => void;
   setIndexError: (error: string | null) => void;
+  setWikiResult: (summary: WikiSummary) => void;
+  setWikiError: (error: string | null) => void;
+  setSearchIndexResult: (summary: SearchIndexSummary) => void;
+  setSearchResults: (query: string, results: SearchResult[]) => void;
+  setSearchError: (error: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -58,6 +71,12 @@ export const useAppStore = create<AppState>((set) => ({
   indexPathSummary: null,
   indexRun: null,
   indexError: null,
+  wikiSummary: null,
+  wikiError: null,
+  searchIndexSummary: null,
+  searchResults: [],
+  searchQuery: '',
+  searchError: null,
   setActivePanel: (panel) => set({ activePanel: panel }),
   setAppVersion: (version) => set({ appVersion: version }),
   setTheme: (theme) => set({ theme }),
@@ -88,4 +107,18 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setIndexRun: (run) => set({ indexRun: run }),
   setIndexError: (error) => set({ indexError: error }),
+  setWikiResult: (summary) =>
+    set({
+      wikiSummary: summary,
+      wikiError: summary.errors.length > 0 ? summary.errors.join('\n') : null,
+    }),
+  setWikiError: (error) => set({ wikiError: error }),
+  setSearchIndexResult: (summary) =>
+    set({
+      searchIndexSummary: summary,
+      searchError: summary.errors.length > 0 ? summary.errors.join('\n') : null,
+    }),
+  setSearchResults: (query, results) =>
+    set({ searchQuery: query, searchResults: results, searchError: null }),
+  setSearchError: (error) => set({ searchError: error }),
 }));

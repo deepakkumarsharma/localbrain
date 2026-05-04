@@ -1,12 +1,38 @@
 import type { FormEvent } from 'react';
+import { useState } from 'react';
 import { Send } from 'lucide-react';
+import { hybridSearch } from '../lib/search';
 import { useAppStore } from '../store/useAppStore';
 
 export function MainPanel() {
-  const { activePanel, setActivePanel } = useAppStore();
+  const {
+    activePanel,
+    searchResults,
+    searchQuery,
+    setActivePanel,
+    setSearchError,
+    setSearchResults,
+  } = useAppStore();
+  const [query, setQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery || isSearching) {
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const results = await hybridSearch(trimmedQuery, 8);
+      setSearchResults(trimmedQuery, results);
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSearching(false);
+    }
   }
 
   return (
@@ -31,13 +57,47 @@ export function MainPanel() {
         </div>
       </header>
 
-      <section className="flex flex-1 items-center justify-center px-8">
-        <div className="max-w-md text-center">
-          <h3 className="text-lg font-semibold">Index a repository to get started</h3>
-          <p className="mt-2 text-sm leading-6 text-app-muted">
-            Drop a folder here or choose a recent repository once indexing is available.
-          </p>
-        </div>
+      <section className="flex-1 overflow-auto px-8 py-8">
+        {searchResults.length > 0 ? (
+          <div className="mx-auto max-w-3xl space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold">Results for {searchQuery}</h3>
+              <p className="mt-1 text-sm text-app-muted">{searchResults.length} matches</p>
+            </div>
+            <div className="space-y-3">
+              {searchResults.map((result, index) => (
+                <article
+                  key={searchResultKey(result, index)}
+                  className="rounded-md border border-app-border bg-app-panel px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h4 className="truncate text-[15px] font-semibold">{result.title}</h4>
+                      <p className="mt-1 break-all text-xs text-app-muted">{result.path}</p>
+                    </div>
+                    <span className="shrink-0 rounded border border-app-border px-2 py-1 text-xs uppercase text-app-muted">
+                      {result.kind}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-app-muted">{result.snippet}</p>
+                  <p className="mt-2 text-xs text-app-muted/70">
+                    score {formatScore(result.score)} · text {formatScore(result.textScore)} ·
+                    vector {formatScore(result.vectorScore)}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <div className="max-w-md text-center">
+              <h3 className="text-lg font-semibold">Index a repository to get started</h3>
+              <p className="mt-2 text-sm leading-6 text-app-muted">
+                Build the wiki and search index, then ask about local code from here.
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       <form className="border-t border-app-border bg-app-panel px-4 py-3" onSubmit={handleSubmit}>
@@ -46,10 +106,13 @@ export function MainPanel() {
             className="min-w-0 flex-1 bg-transparent text-sm leading-6 text-app-text outline-none placeholder:text-app-muted"
             placeholder="Ask Localbrain..."
             type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
           />
           <button
             className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-app-accentSoft text-app-accent hover:bg-app-accent hover:text-app-background"
-            type="button"
+            type="submit"
+            disabled={isSearching}
             aria-label="Submit query"
           >
             <Send className="h-4 w-4" aria-hidden="true" />
@@ -58,4 +121,15 @@ export function MainPanel() {
       </form>
     </main>
   );
+}
+
+function searchResultKey(
+  result: { path: string; kind: string; title: string; score: number },
+  index: number,
+) {
+  return `${result.path}-${result.kind}-${result.title}-${result.score}-${index}`;
+}
+
+function formatScore(score: number) {
+  return Number.isFinite(score) ? score.toFixed(2) : '0.00';
 }

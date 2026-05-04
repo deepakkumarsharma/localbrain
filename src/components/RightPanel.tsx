@@ -1,8 +1,11 @@
 import { Code2, Database, ExternalLink, FileCheck2, FolderSync } from 'lucide-react';
+import { useState } from 'react';
 import { getGraphSymbols, indexFileToGraph } from '../lib/graph';
 import { indexFile, indexPath } from '../lib/indexer';
 import { recordFileMetadata } from '../lib/metadata';
 import { parseSourceFile } from '../lib/parser';
+import { hybridSearch, rebuildSearchIndex } from '../lib/search';
+import { generateWiki } from '../lib/wiki';
 import { useAppStore } from '../store/useAppStore';
 
 const DEMO_SOURCE_PATH = import.meta.env.DEV ? 'src/App.tsx' : null;
@@ -25,6 +28,11 @@ export function RightPanel() {
     indexPathSummary,
     indexRun,
     indexError,
+    wikiSummary,
+    wikiError,
+    searchIndexSummary,
+    searchResults,
+    searchError,
     setParsedFile,
     setParserError,
     setGraphResult,
@@ -34,7 +42,13 @@ export function RightPanel() {
     setIndexFileResult,
     setIndexPathResult,
     setIndexError,
+    setWikiResult,
+    setWikiError,
+    setSearchIndexResult,
+    setSearchResults,
+    setSearchError,
   } = useAppStore();
+  const [isRunningSearchAction, setIsRunningSearchAction] = useState(false);
 
   async function handleParseApp() {
     if (!DEMO_SOURCE_PATH) {
@@ -106,14 +120,62 @@ export function RightPanel() {
     }
   }
 
+  async function handleGenerateWiki() {
+    if (isRunningSearchAction) {
+      return;
+    }
+
+    setIsRunningSearchAction(true);
+    try {
+      const summary = await generateWiki('.');
+      setWikiResult(summary);
+    } catch (error) {
+      setWikiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunningSearchAction(false);
+    }
+  }
+
+  async function handleRebuildSearchIndex() {
+    if (isRunningSearchAction) {
+      return;
+    }
+
+    setIsRunningSearchAction(true);
+    try {
+      const summary = await rebuildSearchIndex('.');
+      setSearchIndexResult(summary);
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunningSearchAction(false);
+    }
+  }
+
+  async function handleDemoHybridSearch() {
+    if (isRunningSearchAction) {
+      return;
+    }
+
+    setIsRunningSearchAction(true);
+    try {
+      const results = await hybridSearch('local code indexer', 6);
+      setSearchResults('local code indexer', results);
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunningSearchAction(false);
+    }
+  }
+
   return (
-    <aside className="flex h-full min-w-[260px] max-w-[380px] flex-col bg-app-panel min-[1440px]:min-w-[400px] min-[1440px]:max-w-[600px]">
-      <header className="border-b border-app-border px-6 py-5">
+    <aside className="flex h-screen min-h-0 min-w-[260px] max-w-[380px] flex-col overflow-hidden bg-app-panel min-[1440px]:min-w-[400px] min-[1440px]:max-w-[600px]">
+      <header className="shrink-0 border-b border-app-border px-6 py-5">
         <h2 className="text-xl font-semibold leading-tight">Details</h2>
         <p className="mt-1.5 text-sm font-medium text-app-muted">Version {appVersion}</p>
       </header>
 
-      <section className="space-y-6 overflow-auto px-6 py-6">
+      <section className="app-scrollbar min-h-0 flex-1 space-y-6 overflow-y-scroll overscroll-contain px-6 py-6">
         <div>
           <h3 className="text-[13px] font-semibold uppercase text-app-muted">Citations</h3>
           <p className="mt-3 text-[15px] leading-7 text-app-muted">No citations yet.</p>
@@ -144,7 +206,7 @@ export function RightPanel() {
               <p className="break-all text-[15px] leading-7 text-app-muted">
                 {parsedFile.path} · {parsedFile.symbols.length} symbols
               </p>
-              <div className="max-h-64 space-y-2 overflow-auto pr-1">
+              <div className="app-scrollbar max-h-64 space-y-2 overflow-y-auto pr-1">
                 {parsedFile.symbols.map((symbol) => (
                   <div
                     key={`${symbol.kind}-${symbol.name}-${symbol.range.startLine}`}
@@ -180,7 +242,7 @@ export function RightPanel() {
                 {graphSummary.filePath} · {graphSummary.symbolCount} symbols ·{' '}
                 {graphSummary.containsCount} contains edges
               </p>
-              <div className="max-h-48 space-y-2 overflow-auto pr-1">
+              <div className="app-scrollbar max-h-48 space-y-2 overflow-y-auto pr-1">
                 {graphSymbols.map((symbol) => (
                   <div
                     key={`graph-${symbol.kind}-${symbol.name}-${symbol.range.startLine}`}
@@ -252,6 +314,53 @@ export function RightPanel() {
         </div>
 
         <div>
+          <h3 className="text-[13px] font-semibold uppercase text-app-muted">Wiki</h3>
+          {wikiSummary ? (
+            <div className="mt-3 rounded-md border border-app-border px-3 py-2 text-sm">
+              <p className="font-medium text-app-text">{wikiSummary.pagesWritten} pages written</p>
+              <p className="mt-1 break-all text-app-muted">{wikiSummary.indexPath}</p>
+            </div>
+          ) : (
+            <p className="mt-3 text-[15px] leading-7 text-app-muted">No wiki generated yet.</p>
+          )}
+          {wikiError ? (
+            <p className="mt-3 whitespace-pre-wrap break-all text-[15px] leading-7 text-red-400">
+              {wikiError}
+            </p>
+          ) : null}
+        </div>
+
+        <div>
+          <h3 className="text-[13px] font-semibold uppercase text-app-muted">Search</h3>
+          {searchIndexSummary ? (
+            <p className="mt-3 text-[15px] leading-7 text-app-muted">
+              {searchIndexSummary.documentsIndexed} docs · {searchIndexSummary.embeddingsIndexed}{' '}
+              embeddings
+            </p>
+          ) : (
+            <p className="mt-3 text-[15px] leading-7 text-app-muted">No search index yet.</p>
+          )}
+          {searchResults.length > 0 ? (
+            <div className="app-scrollbar mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+              {searchResults.map((result, index) => (
+                <div
+                  key={`search-${result.path}-${result.kind}-${result.title}-${index}`}
+                  className="rounded-md border border-app-border px-3 py-2 text-sm"
+                >
+                  <p className="truncate font-medium text-app-text">{result.title}</p>
+                  <p className="mt-1 text-app-muted">score {formatScore(result.score)}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {searchError ? (
+            <p className="mt-3 whitespace-pre-wrap break-all text-[15px] leading-7 text-red-400">
+              {searchError}
+            </p>
+          ) : null}
+        </div>
+
+        <div>
           <h3 className="text-[13px] font-semibold uppercase text-app-muted">Actions</h3>
           <div className="mt-3 flex flex-col gap-2">
             <button
@@ -299,6 +408,33 @@ export function RightPanel() {
               <FolderSync className="h-4 w-4" aria-hidden="true" />
               Incremental Index Project
             </button>
+            <button
+              className={ACTION_BUTTON_CLASS}
+              type="button"
+              disabled={isRunningSearchAction}
+              onClick={handleGenerateWiki}
+            >
+              <FileCheck2 className="h-4 w-4" aria-hidden="true" />
+              Generate Wiki
+            </button>
+            <button
+              className={ACTION_BUTTON_CLASS}
+              type="button"
+              disabled={isRunningSearchAction}
+              onClick={handleRebuildSearchIndex}
+            >
+              <Database className="h-4 w-4" aria-hidden="true" />
+              Rebuild Search Index
+            </button>
+            <button
+              className={ACTION_BUTTON_CLASS}
+              type="button"
+              disabled={isRunningSearchAction}
+              onClick={handleDemoHybridSearch}
+            >
+              <Code2 className="h-4 w-4" aria-hidden="true" />
+              Demo Hybrid Search
+            </button>
             <button className={ACTION_BUTTON_CLASS} type="button">
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Open in editor
@@ -308,4 +444,8 @@ export function RightPanel() {
       </section>
     </aside>
   );
+}
+
+function formatScore(score: number) {
+  return Number.isFinite(score) ? score.toFixed(2) : '0.00';
 }

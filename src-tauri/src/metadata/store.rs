@@ -7,7 +7,10 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
 use thiserror::Error;
 
-use super::schema::{CREATE_FILES_TABLE, CREATE_INDEX_RUNS_TABLE};
+use super::schema::{
+    CREATE_EMBEDDINGS_TABLE, CREATE_FILES_TABLE, CREATE_INDEX_RUNS_TABLE,
+    CREATE_SEARCH_DOCUMENTS_TABLE,
+};
 use super::types::{FileChangeStatus, FileMetadata, IndexRunSummary};
 
 #[derive(Clone)]
@@ -36,7 +39,8 @@ impl MetadataStore {
         let db_path = root_dir.join("metadata.db");
         let options = SqliteConnectOptions::new()
             .filename(db_path)
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .foreign_keys(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
@@ -65,6 +69,12 @@ impl MetadataStore {
         sqlx::query(CREATE_INDEX_RUNS_TABLE)
             .execute(&self.pool)
             .await?;
+        sqlx::query(CREATE_SEARCH_DOCUMENTS_TABLE)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(CREATE_EMBEDDINGS_TABLE)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
@@ -86,6 +96,10 @@ impl MetadataStore {
 
     pub fn normalize_path(&self, path: impl AsRef<Path>) -> String {
         normalize_display_path(path.as_ref())
+    }
+
+    pub(crate) fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     pub async fn scan_file(&self, path: impl AsRef<Path>) -> Result<FileMetadata, MetadataError> {
