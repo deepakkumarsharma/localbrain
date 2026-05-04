@@ -11,6 +11,7 @@ use crate::embeddings::{cosine_similarity, embed_text, vector_magnitude, Embeddi
 use crate::metadata::{current_timestamp, MetadataError, MetadataStore};
 
 const DEFAULT_SEARCH_SCAN_LIMIT: usize = 2_000;
+const MAX_SEARCH_SCAN_LIMIT: usize = 10_000;
 const SEARCH_SCAN_MULTIPLIER: usize = 50;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -94,6 +95,7 @@ pub async fn index_document(
     let updated_at = current_timestamp()?;
     let vector = embed_text(&format!("{title}\n{content}"));
 
+    metadata_store.record_file_metadata(path).await?;
     upsert_search_document(
         metadata_store,
         &normalized_path,
@@ -380,7 +382,7 @@ fn sort_by_score(left: &SearchResult, right: &SearchResult) -> Ordering {
 fn scan_limit_for(result_limit: usize) -> i64 {
     let scan_limit = result_limit
         .saturating_mul(SEARCH_SCAN_MULTIPLIER)
-        .max(DEFAULT_SEARCH_SCAN_LIMIT);
+        .clamp(DEFAULT_SEARCH_SCAN_LIMIT, MAX_SEARCH_SCAN_LIMIT);
 
     i64::try_from(scan_limit).unwrap_or(i64::MAX)
 }

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::graph::{GraphError, GraphStore};
@@ -54,6 +55,10 @@ pub async fn generate_wiki(
 
         match graph_store.get_symbols_for_file(&file.path) {
             Ok(symbols) => {
+                if symbols.is_empty() {
+                    continue;
+                }
+
                 pages.insert(file.path.clone(), symbols);
             }
             Err(error) => errors.push(format!("{}: {}", file.path, error)),
@@ -164,7 +169,9 @@ fn wiki_file_name(path: &str) -> String {
             }
         })
         .collect::<String>();
-    format!("{sanitized}.md")
+    let digest = Sha256::digest(path.as_bytes());
+    let hash = format!("{:x}", digest);
+    format!("{sanitized}_{}.md", &hash[..8])
 }
 
 fn kind_label(kind: SymbolKind) -> &'static str {
@@ -184,7 +191,7 @@ fn kind_label(kind: SymbolKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::generate_wiki;
+    use super::{generate_wiki, wiki_file_name};
     use crate::graph::GraphStore;
     use crate::metadata::MetadataStore;
     use std::fs;
@@ -210,5 +217,15 @@ mod tests {
 
         assert_eq!(summary.pages_written, 1);
         assert!(temp_dir.path().join("docs/wiki/index.md").exists());
+    }
+
+    #[test]
+    fn wiki_file_names_are_readable_and_collision_resistant() {
+        let slash_path = wiki_file_name("src/foo.ts");
+        let underscore_path = wiki_file_name("src_foo.ts");
+
+        assert_ne!(slash_path, underscore_path);
+        assert!(slash_path.starts_with("src_foo.ts_"));
+        assert!(slash_path.ends_with(".md"));
     }
 }

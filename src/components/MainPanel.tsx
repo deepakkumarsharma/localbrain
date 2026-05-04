@@ -14,20 +14,24 @@ export function MainPanel() {
     setSearchResults,
   } = useAppStore();
   const [query, setQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
+    if (!trimmedQuery || isSearching) {
       return;
     }
 
+    setIsSearching(true);
     try {
       const results = await hybridSearch(trimmedQuery, 8);
       setSearchResults(trimmedQuery, results);
     } catch (error) {
       setSearchError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSearching(false);
     }
   }
 
@@ -61,9 +65,9 @@ export function MainPanel() {
               <p className="mt-1 text-sm text-app-muted">{searchResults.length} matches</p>
             </div>
             <div className="space-y-3">
-              {searchResults.map((result) => (
+              {searchResults.map((result, index) => (
                 <article
-                  key={result.path}
+                  key={searchResultKey(result, index)}
                   className="rounded-md border border-app-border bg-app-panel px-4 py-3"
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -77,8 +81,8 @@ export function MainPanel() {
                   </div>
                   <p className="mt-3 text-sm leading-6 text-app-muted">{result.snippet}</p>
                   <p className="mt-2 text-xs text-app-muted/70">
-                    score {result.score.toFixed(2)} · text {result.textScore.toFixed(2)} · vector{' '}
-                    {result.vectorScore.toFixed(2)}
+                    score {formatScore(result.score)} · text {formatScore(result.textScore)} ·
+                    vector {formatScore(result.vectorScore)}
                   </p>
                 </article>
               ))}
@@ -108,6 +112,7 @@ export function MainPanel() {
           <button
             className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-app-accentSoft text-app-accent hover:bg-app-accent hover:text-app-background"
             type="submit"
+            disabled={isSearching}
             aria-label="Submit query"
           >
             <Send className="h-4 w-4" aria-hidden="true" />
@@ -116,4 +121,15 @@ export function MainPanel() {
       </form>
     </main>
   );
+}
+
+function searchResultKey(
+  result: { path: string; kind: string; title: string; score: number },
+  index: number,
+) {
+  return `${result.path}-${result.kind}-${result.title}-${result.score}-${index}`;
+}
+
+function formatScore(score: number) {
+  return Number.isFinite(score) ? score.toFixed(2) : '0.00';
 }

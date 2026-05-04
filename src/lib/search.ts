@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
+const MAX_SEARCH_LIMIT = 100;
+
 export interface SearchIndexSummary {
   root: string;
   documentsIndexed: number;
@@ -22,9 +24,17 @@ export async function rebuildSearchIndex(path: string) {
 }
 
 export async function searchCode(query: string, limit = 10) {
-  return invoke<SearchResult[]>('search_code', { query, limit });
+  return invoke<SearchResult[]>('search_code', { query, limit: sanitizeLimit(limit) });
 }
 
 export async function hybridSearch(query: string, limit = 10) {
-  return invoke<SearchResult[]>('hybrid_search', { query, limit });
+  return invoke<SearchResult[]>('hybrid_search', { query, limit: sanitizeLimit(limit) });
+}
+
+function sanitizeLimit(limit: number) {
+  if (!Number.isFinite(limit)) {
+    return 1;
+  }
+
+  return Math.min(MAX_SEARCH_LIMIT, Math.max(1, Math.trunc(limit)));
 }

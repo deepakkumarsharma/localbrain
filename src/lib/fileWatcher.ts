@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { parseSourceFile } from './parser';
 import { getGraphSymbols } from './graph';
 
+// The backend watcher emits several useful file types, but incremental graph indexing is JS/TS-only.
 const SOURCE_FILE_PATTERN = /\.(jsx?|tsx?)$/i;
 
 export async function initFileWatcher(projectPath: string) {
@@ -19,16 +20,16 @@ export async function initFileWatcher(projectPath: string) {
 
       store.setLastFileChange(filePath);
 
+      if (!SOURCE_FILE_PATTERN.test(filePath)) {
+        return;
+      }
+
       // Small delay to allow editor to finish writing/unlocking the file
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       try {
         // Clear previous error before trying
         store.setIndexError(null);
-
-        if (!SOURCE_FILE_PATTERN.test(filePath)) {
-          return;
-        }
 
         // 1. Run incremental indexing (Metadata + KuzuDB)
         const indexResult = await indexFile(filePath);

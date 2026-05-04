@@ -1,4 +1,5 @@
 import { Code2, Database, ExternalLink, FileCheck2, FolderSync } from 'lucide-react';
+import { useState } from 'react';
 import { getGraphSymbols, indexFileToGraph } from '../lib/graph';
 import { indexFile, indexPath } from '../lib/indexer';
 import { recordFileMetadata } from '../lib/metadata';
@@ -47,6 +48,7 @@ export function RightPanel() {
     setSearchResults,
     setSearchError,
   } = useAppStore();
+  const [isRunningSearchAction, setIsRunningSearchAction] = useState(false);
 
   async function handleParseApp() {
     if (!DEMO_SOURCE_PATH) {
@@ -119,29 +121,50 @@ export function RightPanel() {
   }
 
   async function handleGenerateWiki() {
+    if (isRunningSearchAction) {
+      return;
+    }
+
+    setIsRunningSearchAction(true);
     try {
       const summary = await generateWiki('.');
       setWikiResult(summary);
     } catch (error) {
       setWikiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunningSearchAction(false);
     }
   }
 
   async function handleRebuildSearchIndex() {
+    if (isRunningSearchAction) {
+      return;
+    }
+
+    setIsRunningSearchAction(true);
     try {
       const summary = await rebuildSearchIndex('.');
       setSearchIndexResult(summary);
     } catch (error) {
       setSearchError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunningSearchAction(false);
     }
   }
 
   async function handleDemoHybridSearch() {
+    if (isRunningSearchAction) {
+      return;
+    }
+
+    setIsRunningSearchAction(true);
     try {
       const results = await hybridSearch('local code indexer', 6);
       setSearchResults('local code indexer', results);
     } catch (error) {
       setSearchError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunningSearchAction(false);
     }
   }
 
@@ -319,13 +342,13 @@ export function RightPanel() {
           )}
           {searchResults.length > 0 ? (
             <div className="app-scrollbar mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-              {searchResults.map((result) => (
+              {searchResults.map((result, index) => (
                 <div
-                  key={`search-${result.path}`}
+                  key={`search-${result.path}-${result.kind}-${result.title}-${index}`}
                   className="rounded-md border border-app-border px-3 py-2 text-sm"
                 >
                   <p className="truncate font-medium text-app-text">{result.title}</p>
-                  <p className="mt-1 text-app-muted">score {result.score.toFixed(2)}</p>
+                  <p className="mt-1 text-app-muted">score {formatScore(result.score)}</p>
                 </div>
               ))}
             </div>
@@ -385,19 +408,30 @@ export function RightPanel() {
               <FolderSync className="h-4 w-4" aria-hidden="true" />
               Incremental Index Project
             </button>
-            <button className={ACTION_BUTTON_CLASS} type="button" onClick={handleGenerateWiki}>
+            <button
+              className={ACTION_BUTTON_CLASS}
+              type="button"
+              disabled={isRunningSearchAction}
+              onClick={handleGenerateWiki}
+            >
               <FileCheck2 className="h-4 w-4" aria-hidden="true" />
               Generate Wiki
             </button>
             <button
               className={ACTION_BUTTON_CLASS}
               type="button"
+              disabled={isRunningSearchAction}
               onClick={handleRebuildSearchIndex}
             >
               <Database className="h-4 w-4" aria-hidden="true" />
               Rebuild Search Index
             </button>
-            <button className={ACTION_BUTTON_CLASS} type="button" onClick={handleDemoHybridSearch}>
+            <button
+              className={ACTION_BUTTON_CLASS}
+              type="button"
+              disabled={isRunningSearchAction}
+              onClick={handleDemoHybridSearch}
+            >
               <Code2 className="h-4 w-4" aria-hidden="true" />
               Demo Hybrid Search
             </button>
@@ -410,4 +444,8 @@ export function RightPanel() {
       </section>
     </aside>
   );
+}
+
+function formatScore(score: number) {
+  return Number.isFinite(score) ? score.toFixed(2) : '0.00';
 }

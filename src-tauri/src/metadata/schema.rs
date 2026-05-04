@@ -25,13 +25,17 @@ CREATE TABLE IF NOT EXISTS search_documents (
   kind TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
 )";
 
+// The current retrieval MVP stores one document-level embedding per path.
+// Chunk-level embeddings will replace this with a composite (path, chunk_id) key.
 pub const CREATE_EMBEDDINGS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS embeddings (
   path TEXT PRIMARY KEY,
   dimensions INTEGER NOT NULL,
   vector_json TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
 )";

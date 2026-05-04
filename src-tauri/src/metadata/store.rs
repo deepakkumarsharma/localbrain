@@ -39,7 +39,8 @@ impl MetadataStore {
         let db_path = root_dir.join("metadata.db");
         let options = SqliteConnectOptions::new()
             .filename(db_path)
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .foreign_keys(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
@@ -97,7 +98,7 @@ impl MetadataStore {
         normalize_display_path(path.as_ref())
     }
 
-    pub fn pool(&self) -> &SqlitePool {
+    pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
