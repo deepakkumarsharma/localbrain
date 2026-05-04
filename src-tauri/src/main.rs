@@ -1,13 +1,17 @@
 mod commands;
+mod embeddings;
 mod graph;
 mod indexer;
 mod metadata;
 mod parser;
+mod search;
 mod watcher;
+mod wiki;
 
 use commands::{
-    check_file_changed, get_app_version, get_file_metadata, get_graph_symbols, get_index_status,
-    index_file, index_file_to_graph, index_path, parse_source_file, record_file_metadata,
+    check_file_changed, generate_wiki, get_app_version, get_file_metadata, get_graph_symbols,
+    get_index_status, hybrid_search, index_file, index_file_to_graph, index_path,
+    parse_source_file, rebuild_search_index, record_file_metadata, search_code,
 };
 use tauri::Manager;
 use watcher::{start_watcher, WatcherState};
@@ -32,11 +36,15 @@ fn main() {
             get_file_metadata,
             get_graph_symbols,
             get_index_status,
+            generate_wiki,
+            hybrid_search,
             index_file,
             index_file_to_graph,
             index_path,
             parse_source_file,
+            rebuild_search_index,
             record_file_metadata,
+            search_code,
             start_watcher
         ])
         .run(tauri::generate_context!())

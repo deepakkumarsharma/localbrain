@@ -5,6 +5,8 @@ import { useAppStore } from '../store/useAppStore';
 import { parseSourceFile } from './parser';
 import { getGraphSymbols } from './graph';
 
+const SOURCE_FILE_PATTERN = /\.(jsx?|tsx?)$/i;
+
 export async function initFileWatcher(projectPath: string) {
   console.log('Initializing file watcher for:', projectPath);
   try {
@@ -23,6 +25,10 @@ export async function initFileWatcher(projectPath: string) {
       try {
         // Clear previous error before trying
         store.setIndexError(null);
+
+        if (!SOURCE_FILE_PATTERN.test(filePath)) {
+          return;
+        }
 
         // 1. Run incremental indexing (Metadata + KuzuDB)
         const indexResult = await indexFile(filePath);
