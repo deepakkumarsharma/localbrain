@@ -10,6 +10,9 @@ use walkdir::WalkDir;
 use crate::embeddings::{cosine_similarity, embed_text, vector_magnitude, EmbeddingSummary};
 use crate::metadata::{current_timestamp, MetadataError, MetadataStore};
 
+const DEFAULT_SEARCH_SCAN_LIMIT: usize = 2_000;
+const SEARCH_SCAN_MULTIPLIER: usize = 50;
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchIndexSummary {
@@ -119,8 +122,10 @@ pub async fn search_text(
         SELECT path, kind, title, content
         FROM search_documents
         ORDER BY updated_at DESC
+        LIMIT ?
         ",
     )
+    .bind(scan_limit_for(limit))
     .fetch_all(metadata_store.pool())
     .await?;
 
@@ -164,8 +169,10 @@ pub async fn hybrid_search(
         FROM search_documents d
         LEFT JOIN embeddings e ON e.path = d.path
         ORDER BY d.updated_at DESC
+        LIMIT ?
         ",
     )
+    .bind(scan_limit_for(limit))
     .fetch_all(metadata_store.pool())
     .await?;
 
@@ -368,6 +375,14 @@ fn sort_by_score(left: &SearchResult, right: &SearchResult) -> Ordering {
         .partial_cmp(&left.score)
         .unwrap_or(Ordering::Equal)
         .then_with(|| left.path.cmp(&right.path))
+}
+
+fn scan_limit_for(result_limit: usize) -> i64 {
+    let scan_limit = result_limit
+        .saturating_mul(SEARCH_SCAN_MULTIPLIER)
+        .max(DEFAULT_SEARCH_SCAN_LIMIT);
+
+    i64::try_from(scan_limit).unwrap_or(i64::MAX)
 }
 
 fn previous_char_boundary(value: &str, mut index: usize) -> usize {
