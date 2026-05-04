@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react';
-import type { CSSProperties, PointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import type { CSSProperties, PointerEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { MainPanel } from './components/MainPanel';
 import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
-import { useAppStore } from './store/useAppStore';
 import { initFileWatcher } from './lib/fileWatcher';
+import { useAppStore } from './store/useAppStore';
 
 const LARGE_SCREEN_SIDE_PANEL_MIN_WIDTH = 400;
 const LARGE_SCREEN_SIDE_PANEL_MAX_WIDTH = 600;
 const SMALL_SCREEN_SIDE_PANEL_MIN_WIDTH = 260;
 const SMALL_SCREEN_SIDE_PANEL_MAX_WIDTH = 380;
-const LEFT_PANEL_DEFAULT_WIDTH = 320;
+const LEFT_PANEL_DEFAULT_WIDTH = 280;
 const RIGHT_PANEL_DEFAULT_WIDTH = 360;
 const LARGE_SCREEN_BREAKPOINT = 1440;
 

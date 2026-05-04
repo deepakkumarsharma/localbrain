@@ -1,3 +1,4 @@
+use crate::metadata::MetadataStore;
 use notify_debouncer_mini::{
     new_debouncer,
     notify::{RecommendedWatcher, RecursiveMode},
@@ -25,28 +26,33 @@ pub fn start_watcher(
     path: String,
     app: AppHandle,
     state: tauri::State<'_, WatcherState>,
+    metadata_store: tauri::State<'_, MetadataStore>,
 ) -> Result<(), String> {
-    let path_to_watch = Path::new(&path);
+    let path_to_watch = metadata_store.resolve_path(&path);
     if !path_to_watch.exists() {
         return Err(format!("Path does not exist: {}", path));
     }
 
     let app_clone = app.clone();
+    let metadata_store_clone = metadata_store.inner().clone();
     let watch_root = path_to_watch.canonicalize().map_err(|e| e.to_string())?;
+    println!("Watcher starting for root: {:?}", watch_root);
+
     let mut debouncer_guard = state.debouncer.lock().map_err(|e| e.to_string())?;
 
     let mut debouncer = new_debouncer(
-        Duration::from_millis(50),
+        Duration::from_millis(100),
         move |res: DebounceEventResult| match res {
             Ok(events) => {
                 for event in events {
+                    println!("Watcher event: {:?}", event.path);
                     if !should_emit_path(&event.path) {
+                        println!("Watcher: skipping path {:?}", event.path);
                         continue;
                     }
 
-                    let relative_path = event.path.strip_prefix(&watch_root).unwrap_or(&event.path);
-                    let path_str = relative_path.to_string_lossy().to_string();
-
+                    let path_str = metadata_store_clone.normalize_path(&event.path);
+                    println!("Watcher: emitting file-changed for {}", path_str);
                     let _ = app_clone.emit("file-changed", path_str);
                 }
             }
@@ -57,7 +63,7 @@ pub fn start_watcher(
 
     debouncer
         .watcher()
-        .watch(path_to_watch, RecursiveMode::Recursive)
+        .watch(&watch_root, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
 
     *debouncer_guard = Some(debouncer);
@@ -70,7 +76,7 @@ fn should_emit_path(path: &Path) -> bool {
         let value = component.as_os_str().to_string_lossy();
         matches!(
             value.as_ref(),
-            ".git" | "node_modules" | "target" | "dist" | ".ssh"
+            ".git" | "node_modules" | "target" | "dist" | ".ssh" | ".localbrain"
         )
     }) {
         return false;
@@ -86,7 +92,7 @@ fn should_emit_path(path: &Path) -> bool {
     path.extension().is_some_and(|extension| {
         matches!(
             extension.to_string_lossy().as_ref(),
-            "ts" | "tsx" | "rs" | "py" | "md" | "java" | "html"
+            "js" | "jsx" | "ts" | "tsx" | "rs" | "py" | "md" | "java" | "html"
         )
     })
 }
