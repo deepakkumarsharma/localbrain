@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::watch;
 
 pub struct LocalLlmState {
     pub server_port: u16,
@@ -31,9 +32,14 @@ impl LocalLlmState {
         self.child.lock().unwrap().is_some()
     }
 
-    pub fn clear_child(&self) {
-        let mut child = self.child.lock().unwrap();
-        *child = None;
+    pub fn kill_child_if_running(&self) -> Result<(), String> {
+        let mut child_guard = self.child.lock().map_err(|error| error.to_string())?;
+        if let Some(child) = child_guard.take() {
+            child
+                .kill()
+                .map_err(|error| format!("Failed to kill llama-server: {error}"))?;
+        }
+        Ok(())
     }
 }
 
@@ -81,14 +87,24 @@ async fn is_server_alive(port: u16) -> bool {
 }
 
 // Poll /health every 500ms until ready or timeout
-async fn wait_for_server_ready(port: u16) -> Result<(), String> {
-    let client = reqwest::Client::new();
+async fn wait_for_server_ready(
+    port: u16,
+    mut terminated_rx: watch::Receiver<bool>,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|error| format!("Failed to build health client: {error}"))?;
     let health_url = format!("http://127.0.0.1:{}/health", port);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
 
     println!("[llama] Waiting for server on port {}...", port);
 
     while std::time::Instant::now() < deadline {
+        if *terminated_rx.borrow() {
+            return Err("llama-server terminated before becoming ready".to_string());
+        }
+
         match client.get(&health_url).send().await {
             Ok(resp) if resp.status().is_success() => {
                 println!("[llama] Server is ready ✓");
@@ -101,14 +117,21 @@ async fn wait_for_server_ready(port: u16) -> Result<(), String> {
                 // Port not yet bound, keep waiting
             }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+            changed = terminated_rx.changed() => {
+                if changed.is_ok() && *terminated_rx.borrow() {
+                    return Err("llama-server terminated before becoming ready".to_string());
+                }
+            }
+        }
     }
 
     Err("llama-server did not become ready within 120 seconds".to_string())
 }
 
 // Drain stdout/stderr in a background task so the process never gets SIGPIPE
-fn spawn_log_drain(mut rx: Receiver<CommandEvent>) {
+fn spawn_log_drain(mut rx: Receiver<CommandEvent>, terminated_tx: watch::Sender<bool>) {
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
@@ -122,6 +145,7 @@ fn spawn_log_drain(mut rx: Receiver<CommandEvent>) {
                     eprintln!("[llama error] {}", e);
                 }
                 CommandEvent::Terminated(payload) => {
+                    let _ = terminated_tx.send(true);
                     eprintln!(
                         "[llama TERMINATED] code={:?} signal={:?}",
                         payload.code, payload.signal
@@ -196,8 +220,10 @@ pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
 
+    let (terminated_tx, terminated_rx) = watch::channel(false);
+
     // Drain stdout/stderr in the background so the process never gets SIGPIPE
-    spawn_log_drain(rx);
+    spawn_log_drain(rx, terminated_tx);
 
     // Store the child handle
     {
@@ -208,7 +234,7 @@ pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
     // Block until /health returns 200 before releasing the startup lock.
     // This means any concurrent callers that are waiting on startup_lock
     // will find a fully ready server when they eventually acquire it.
-    if let Err(error) = wait_for_server_ready(port).await {
+    if let Err(error) = wait_for_server_ready(port, terminated_rx).await {
         {
             let mut child_guard = state.child.lock().unwrap();
             if let Some(child) = child_guard.take() {
@@ -224,14 +250,8 @@ pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
 
 pub async fn stop_llama_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<LocalLlmState>();
-    let mut child_guard = state.child.lock().unwrap();
-
-    if let Some(child) = child_guard.take() {
-        child
-            .kill()
-            .map_err(|e| format!("Failed to kill llama-server: {}", e))?;
-        println!("[llama] Server stopped.");
-    }
+    state.kill_child_if_running()?;
+    println!("[llama] Server stopped.");
 
     Ok(())
 }
@@ -242,12 +262,7 @@ pub async fn get_llm_running_status(app: &AppHandle) -> bool {
         return false;
     }
 
-    if is_server_alive(state.server_port).await {
-        true
-    } else {
-        state.clear_child();
-        false
-    }
+    is_server_alive(state.server_port).await
 }
 
 pub async fn generate_with_llama(prompt: &str, port: u16) -> Result<String, String> {

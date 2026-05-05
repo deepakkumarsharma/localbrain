@@ -23,12 +23,12 @@ export function WikiView() {
     }
 
     const rawHtml = marked.parse(content, { async: false }) as string;
-    const processedHtml = rawHtml.replace(
-      /\[\[([^\]]+)\]\]/g,
-      '<button type="button" class="wikilink" data-node="$1">$1</button>',
-    );
+    const processedHtml = rawHtml.replace(/\[\[([^\]]+)\]\]/g, (_, capture: string) => {
+      const escaped = escapeHtml(capture.trim());
+      return `<button type="button" class="wikilink" data-node="${escaped}">${escaped}</button>`;
+    });
 
-    setHtml(processedHtml);
+    setHtml(sanitizeHtml(processedHtml));
   }, [content]);
 
   const handleWikiClick = (event: React.MouseEvent) => {
@@ -233,6 +233,37 @@ export function WikiView() {
       `}</style>
     </div>
   );
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeHtml(value: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(value, 'text/html');
+
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
+    node.remove();
+  });
+
+  doc.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    const attrs = Array.from(element.attributes);
+    for (const attr of attrs) {
+      const name = attr.name.toLowerCase();
+      const val = attr.value.trim().toLowerCase();
+      if (name.startsWith('on') || val.startsWith('javascript:')) {
+        element.removeAttribute(attr.name);
+      }
+    }
+  });
+
+  return doc.body.innerHTML;
 }
 
 function MetaPill({

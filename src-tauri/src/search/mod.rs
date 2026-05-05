@@ -218,6 +218,44 @@ pub async fn hybrid_search(
     Ok(results)
 }
 
+pub async fn document_for_path(
+    metadata_store: &MetadataStore,
+    path: &str,
+    query: &str,
+) -> Result<Option<SearchResult>, SearchError> {
+    let row = sqlx::query(
+        "
+        SELECT path, kind, title, content
+        FROM search_documents
+        WHERE path = ?
+        LIMIT 1
+        ",
+    )
+    .bind(path)
+    .fetch_optional(metadata_store.pool())
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let path: String = row.try_get("path")?;
+    let kind: String = row.try_get("kind")?;
+    let title: String = row.try_get("title")?;
+    let content: String = row.try_get("content")?;
+    let terms = query_terms(query);
+
+    Ok(Some(SearchResult {
+        path,
+        kind,
+        title,
+        snippet: snippet(&content, &terms),
+        text_score: 1.0,
+        vector_score: 1.0,
+        score: 1.0,
+    }))
+}
+
 async fn upsert_search_document(
     metadata_store: &MetadataStore,
     path: &str,

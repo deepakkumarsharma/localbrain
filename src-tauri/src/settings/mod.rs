@@ -56,13 +56,12 @@ impl SettingsStore {
         provider: LlmProvider,
         cloud_enabled: bool,
     ) -> Result<ProviderSettings, String> {
+        let mut cloned = self.get()?;
+        cloned.provider = provider;
+        cloned.cloud_enabled = cloud_enabled && provider != LlmProvider::Local;
+        persistence::save_settings(app, &cloned)?;
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
-        settings.provider = provider;
-        settings.cloud_enabled = cloud_enabled && provider != LlmProvider::Local;
-
-        let cloned = settings.clone();
-        let _ = persistence::save_settings(app, &cloned);
-
+        *settings = cloned.clone();
         Ok(cloned)
     }
 
@@ -71,12 +70,11 @@ impl SettingsStore {
         app: &AppHandle,
         path: Option<String>,
     ) -> Result<ProviderSettings, String> {
+        let mut cloned = self.get()?;
+        cloned.local_model_path = path;
+        persistence::save_settings(app, &cloned)?;
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
-        settings.local_model_path = path;
-
-        let cloned = settings.clone();
-        let _ = persistence::save_settings(app, &cloned);
-
+        *settings = cloned.clone();
         Ok(cloned)
     }
 }

@@ -1,18 +1,8 @@
 fn main() {
-    // Copy dylibs next to the sidecar binary in the target directory
-    // so dyld can find them at @executable_path when Tauri spawns the sidecar
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-
-    // OUT_DIR = target/debug/build/<crate>/out — go up 3 levels to get target/debug/
-    let target_dir = std::path::Path::new(&out_dir)
-        .ancestors()
-        .nth(3)
-        .unwrap()
-        .to_path_buf();
-
     let binaries_dir = std::path::Path::new("binaries");
 
     if binaries_dir.exists() {
+        println!("cargo:rerun-if-changed={}", binaries_dir.display());
         for entry in std::fs::read_dir(binaries_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
@@ -34,7 +24,21 @@ fn main() {
             }
 
             // Copy the real file using the original symlink's filename
-            let dest = target_dir.join(path.file_name().unwrap());
+            let dest = binaries_dir.join(path.file_name().unwrap());
+            if dest.exists() {
+                match std::fs::canonicalize(&dest) {
+                    Ok(existing) if existing == real_path => {
+                        println!(
+                            "cargo:warning=Skipped copy for {:?}; destination already points to source",
+                            path.file_name().unwrap()
+                        );
+                        println!("cargo:rerun-if-changed={}", path.display());
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             if let Err(e) = std::fs::copy(&real_path, &dest) {
                 println!(
                     "cargo:warning=Failed to copy {:?} → {:?}: {}",
@@ -42,8 +46,9 @@ fn main() {
                 );
             } else {
                 println!(
-                    "cargo:warning=Copied {:?} to target/debug/",
-                    path.file_name().unwrap()
+                    "cargo:warning=Copied {:?} to {}",
+                    path.file_name().unwrap(),
+                    binaries_dir.display()
                 );
             }
 

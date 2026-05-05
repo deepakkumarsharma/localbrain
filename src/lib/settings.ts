@@ -5,7 +5,7 @@ export type LlmProvider = 'local' | 'anthropic' | 'gemini' | 'openAi';
 export interface ProviderSettings {
   provider: LlmProvider;
   cloudEnabled: boolean;
-  localModelPath?: string;
+  localModelPath: string | null;
 }
 
 export async function getProviderSettings() {

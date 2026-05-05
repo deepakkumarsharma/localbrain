@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::graph::{GraphContext, GraphStore};
 use crate::metadata::MetadataStore;
-use crate::search::{hybrid_search, SearchError, SearchResult};
+use crate::search::{document_for_path, hybrid_search, SearchError, SearchResult};
 use crate::settings::SettingsStore;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -39,26 +39,67 @@ pub enum LlmError {
 
 pub async fn ask_local(
     query: &str,
+    active_path: Option<&str>,
     metadata_store: &MetadataStore,
     graph_store: &GraphStore,
     app: &tauri::AppHandle,
 ) -> Result<ChatAnswer, LlmError> {
+    const MIN_EVIDENCE_SCORE: f32 = 0.20;
+    const MIN_EVIDENCE_TEXT_SCORE: f32 = 0.04;
+    const MIN_EVIDENCE_VECTOR_SCORE: f32 = 0.20;
+    const MIN_GENERATION_SCORE: f32 = 0.45;
+    const MIN_TEXT_SCORE: f32 = 0.08;
+    const MIN_VECTOR_SCORE: f32 = 0.55;
+
     let settings = app
         .state::<SettingsStore>()
         .get()
         .map_err(LlmError::Generation)?;
-    let results = hybrid_search(metadata_store, query, 6).await?;
-    let citations = results.iter().map(citation_from_result).collect::<Vec<_>>();
-    let graph_context = graph_context_for_results(graph_store, &results);
+    let mut results = hybrid_search(metadata_store, query, 6).await?;
+    if let Some(path) = active_path.filter(|path| query_targets_path(query, path)) {
+        if let Some(focused_result) = document_for_path(metadata_store, path, query).await? {
+            results.retain(|result| result.path != focused_result.path);
+            results.insert(0, focused_result);
+        }
+    }
 
+    let relevant_results = results
+        .into_iter()
+        .filter(|result| {
+            is_relevant_result(
+                result,
+                MIN_EVIDENCE_SCORE,
+                MIN_EVIDENCE_TEXT_SCORE,
+                MIN_EVIDENCE_VECTOR_SCORE,
+            )
+        })
+        .collect::<Vec<_>>();
+    let citations = relevant_results
+        .iter()
+        .map(citation_from_result)
+        .collect::<Vec<_>>();
+    let graph_context = graph_context_for_results(graph_store, &relevant_results);
+
+    let mut used_llm = false;
     let answer = if settings.local_model_path.is_some() {
         let state = app.state::<local::LocalLlmState>();
-        if state.is_running() {
+        if state.is_running()
+            && query_is_meaningful(query)
+            && has_relevant_results(
+                &relevant_results,
+                MIN_GENERATION_SCORE,
+                MIN_TEXT_SCORE,
+                MIN_VECTOR_SCORE,
+            )
+        {
             let prompt = build_prompt(query, &citations, &graph_context);
-            let generated = local::generate_with_llama(&prompt, state.server_port)
-                .await
-                .map_err(LlmError::Generation)?;
-            format_answer(query, Some(&generated), &citations, &graph_context)
+            match local::generate_with_llama(&prompt, state.server_port).await {
+                Ok(generated) => {
+                    used_llm = true;
+                    format_answer(query, Some(&generated), &citations, &graph_context)
+                }
+                Err(_) => format_answer(query, None, &citations, &graph_context),
+            }
         } else {
             format_answer(query, None, &citations, &graph_context)
         }
@@ -66,18 +107,75 @@ pub async fn ask_local(
         format_answer(query, None, &citations, &graph_context)
     };
 
-    let is_llm =
-        settings.local_model_path.is_some() && app.state::<local::LocalLlmState>().is_running();
-
     Ok(ChatAnswer {
         answer,
         citations,
         graph_context,
-        provider: if is_llm {
+        provider: if used_llm {
             "llama-cpp".to_string()
         } else {
             "local-retrieval".to_string()
         },
+    })
+}
+
+fn query_targets_path(query: &str, path: &str) -> bool {
+    let query = query.to_lowercase();
+    let path = path.to_lowercase();
+    let file_name = path.rsplit('/').next().unwrap_or(&path);
+
+    query.contains(&path)
+        || query.contains(file_name)
+        || query.contains("this file")
+        || query.contains("current file")
+        || query.contains("selected file")
+}
+
+fn is_relevant_result(
+    result: &SearchResult,
+    min_score: f32,
+    min_text_score: f32,
+    min_vector_score: f32,
+) -> bool {
+    result.score >= min_score
+        && (result.text_score >= min_text_score || result.vector_score >= min_vector_score)
+}
+
+fn query_is_meaningful(query: &str) -> bool {
+    let trimmed = query.trim();
+    if trimmed.len() < 3 {
+        return false;
+    }
+
+    let alpha_count = trimmed
+        .chars()
+        .filter(|character| character.is_ascii_alphabetic())
+        .count();
+    if alpha_count < 3 {
+        return false;
+    }
+
+    let token_count = trimmed
+        .split_whitespace()
+        .filter(|token| {
+            token
+                .chars()
+                .any(|character| character.is_ascii_alphabetic())
+        })
+        .count();
+
+    token_count >= 2 || trimmed.len() >= 8
+}
+
+fn has_relevant_results(
+    results: &[SearchResult],
+    min_score: f32,
+    min_text_score: f32,
+    min_vector_score: f32,
+) -> bool {
+    results.first().is_some_and(|result| {
+        result.score >= min_score
+            && (result.text_score >= min_text_score || result.vector_score >= min_vector_score)
     })
 }
 
@@ -231,16 +329,16 @@ fn format_answer(
 }
 
 fn clean_summary(value: &str) -> String {
-    let mut seen = std::collections::HashSet::new();
     for line in value.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        let normalized = line.to_lowercase();
-        if seen.insert(normalized) {
-            return truncate_snippet(line);
+        let stripped = line.trim_start_matches('#').trim();
+        if stripped.eq_ignore_ascii_case("summary") {
+            continue;
         }
+        return truncate_snippet(line);
     }
     String::new()
 }

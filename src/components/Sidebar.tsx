@@ -64,7 +64,18 @@ export function Sidebar() {
   const startServer = async () => {
     try {
       await startLocalLlm();
-      setLlmRunning(true);
+      let running = false;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        running = await getLocalLlmStatus();
+        if (running) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      setLlmRunning(running);
+      if (!running) {
+        alert('Local server started but is not healthy yet. Please wait and try again.');
+      }
     } catch (error) {
       alert(`Failed to start server: ${error}`);
     }
@@ -291,7 +302,7 @@ export function Sidebar() {
                     className={`h-4 w-4 shrink-0 ${llmRunning ? 'text-emerald-400' : 'text-violet-400'}`}
                   />
                   <span className="truncate">
-                    {providerSettings.localModelPath.split('/').pop()}
+                    {providerSettings.localModelPath.split(/[/\\]/).pop()}
                   </span>
                   {llmRunning && (
                     <span className="ml-auto flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />

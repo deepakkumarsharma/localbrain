@@ -187,13 +187,20 @@ pub async fn hybrid_search(
 #[tauri::command]
 pub async fn ask_local(
     query: String,
+    active_path: Option<String>,
     app: tauri::AppHandle,
     metadata_store: tauri::State<'_, MetadataStore>,
     graph_store: tauri::State<'_, GraphStore>,
 ) -> Result<ChatAnswer, String> {
-    crate::llm::ask_local(&query, &metadata_store, &graph_store, &app)
-        .await
-        .map_err(|error| error.to_string())
+    crate::llm::ask_local(
+        &query,
+        active_path.as_deref(),
+        &metadata_store,
+        &graph_store,
+        &app,
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

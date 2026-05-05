@@ -5,6 +5,15 @@ description = "Local-first codebase intelligence platform"
 authors = ["Live Brain"]
 edition = "2021"
 rust-version = "1.81"
+default-run = "localbrain"
+
+[[bin]]
+name = "test_spawn"
+path = "test_spawn.rs"
+
+[[bin]]
+name = "test_llama"
+path = "test_llama.rs"
 
 [build-dependencies]
 tauri-build = { version = "=2.6.0", features = [] }

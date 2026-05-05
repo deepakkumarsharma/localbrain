@@ -338,7 +338,10 @@ fn infer_module_profile(
     if type_count > 0 {
         return "Type/model definition module";
     }
-    if file_path.ends_with(".json") || file_path.ends_with(".toml") || file_path.ends_with(".yaml")
+    if file_path.ends_with(".json")
+        || file_path.ends_with(".toml")
+        || file_path.ends_with(".yaml")
+        || file_path.ends_with(".yml")
     {
         return "Configuration module";
     }

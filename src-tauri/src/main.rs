@@ -22,10 +22,11 @@ use commands::{
 };
 use settings::SettingsStore;
 use tauri::Manager;
+use tauri::RunEvent;
 use watcher::{start_watcher, WatcherState};
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -85,6 +86,15 @@ fn main() {
             stop_local_llm,
             start_watcher
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Local Brain");
+        .build(tauri::generate_context!())
+        .expect("failed to build Local Brain");
+
+    app.run(|app_handle, event| {
+        if let RunEvent::Exit = event {
+            let llm_state = app_handle.state::<llm::local::LocalLlmState>();
+            if let Err(error) = llm_state.kill_child_if_running() {
+                eprintln!("Failed to stop llama-server on app exit: {error}");
+            }
+        }
+    });
 }

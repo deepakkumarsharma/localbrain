@@ -11,6 +11,7 @@ use crate::metadata::MetadataStore;
 use crate::search::{hybrid_search, search_text};
 
 const AGENT_API_ADDR: &str = "127.0.0.1:3737";
+const MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
 
 pub struct AgentApiState {
     server: Mutex<Option<AgentApiServer>>,
@@ -33,6 +34,7 @@ pub struct AgentApiStatus {
 struct QueryRequest {
     query: String,
     limit: Option<usize>,
+    active_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -180,14 +182,23 @@ async fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
 
     let headers_end = headers_end.ok_or_else(|| "invalid HTTP request (no headers)".to_string())?;
     let raw_headers = String::from_utf8_lossy(&accumulator[..headers_end]).into_owned();
-    let mut content_length = 0;
+    let mut content_length: usize = 0;
 
     for line in raw_headers.lines() {
         if line.to_lowercase().starts_with("content-length:") {
             if let Some(val) = line.split(':').nth(1) {
-                content_length = val.trim().parse::<usize>().unwrap_or(0);
+                content_length = val
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| "invalid content-length".to_string())?;
             }
         }
+    }
+    if content_length > MAX_BODY_SIZE {
+        return Err(format!(
+            "request body too large (max {} bytes)",
+            MAX_BODY_SIZE
+        ));
     }
 
     let body_start = headers_end + 4;
@@ -195,6 +206,12 @@ async fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
         let bytes_read = stream.read(&mut buffer).await.map_err(|e| e.to_string())?;
         if bytes_read == 0 {
             break; // EOF
+        }
+        if accumulator.len().saturating_add(bytes_read) > body_start.saturating_add(MAX_BODY_SIZE) {
+            return Err(format!(
+                "request body too large (max {} bytes)",
+                MAX_BODY_SIZE
+            ));
         }
         accumulator.extend_from_slice(&buffer[..bytes_read]);
     }
@@ -265,7 +282,14 @@ async fn route_request(
         },
         ("POST", "/explain") => match parse_json::<QueryRequest>(&request.body) {
             Ok(payload) => {
-                match crate::llm::ask_local(&payload.query, metadata_store, graph_store, app).await
+                match crate::llm::ask_local(
+                    &payload.query,
+                    payload.active_path.as_deref(),
+                    metadata_store,
+                    graph_store,
+                    app,
+                )
+                .await
                 {
                     Ok(answer) => json_response(200, serde_json::json!(answer)),
                     Err(error) => {

@@ -508,7 +508,8 @@ fn visual_kind_for_symbol(symbol: &CodeSymbol) -> String {
         return "import".to_string();
     }
 
-    if symbol.name.starts_with("use")
+    if symbol.kind == SymbolKind::Function
+        && symbol.name.starts_with("use")
         && symbol
             .name
             .chars()

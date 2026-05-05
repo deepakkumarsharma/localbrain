@@ -81,20 +81,6 @@ export function RightPanel() {
       return;
     }
 
-    const canAsk = Boolean(providerSettings?.localModelPath) && llmRunning;
-    if (!canAsk) {
-      setChatError(
-        'Local model is not ready. Select a model and start the local server from the left panel.',
-      );
-      addChatMessage(
-        createChatMessage(
-          'assistant',
-          '## Local model not ready\nPlease select a `.gguf` model and start the local server from the left panel before asking.',
-        ),
-      );
-      return;
-    }
-
     setChatError(null);
     setIsAsking(true);
     setQuery('');
@@ -124,7 +110,7 @@ export function RightPanel() {
         await new Promise((resolve) => setTimeout(resolve, 600));
       }
 
-      const answer = await askLocal(trimmed);
+      const answer = await askLocal(trimmed, activeSourcePath);
       setCitations(answer.citations);
       setGraphContext(answer.graphContext);
       replaceChatMessage(pendingId, {
@@ -269,7 +255,9 @@ export function RightPanel() {
                   {message.role === 'assistant' ? (
                     <div
                       className="chat-markdown text-[14px] leading-relaxed [&_h2]:text-[13px] [&_h2]:font-black [&_h2]:uppercase [&_h2]:tracking-widest [&_h2]:text-app-muted [&_h2]:mt-3 [&_h2:first-child]:mt-0 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 [&_code]:rounded [&_code]:bg-app-panelSoft [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px]"
-                      dangerouslySetInnerHTML={{ __html: marked.parse(message.content) as string }}
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHtml(marked.parse(message.content) as string),
+                      }}
                     />
                   ) : (
                     <p className="whitespace-pre-wrap">{message.content}</p>
@@ -289,12 +277,12 @@ export function RightPanel() {
             }
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            disabled={!isLocalReady || isAsking}
+            disabled={isAsking}
           />
           <button
             className="absolute right-2 top-2 rounded-lg p-1.5 text-app-muted hover:bg-app-panelSoft hover:text-app-text transition-colors"
             type="submit"
-            disabled={!isLocalReady || isAsking}
+            disabled={isAsking}
             aria-label="Ask Localbrain"
           >
             <Send className="h-5 w-5" aria-hidden="true" />
@@ -306,7 +294,7 @@ export function RightPanel() {
               key={question}
               className="rounded-full border border-app-border bg-app-panelSoft px-3.5 py-1.5 text-[12px] font-bold text-app-muted hover:text-app-text hover:border-app-accent transition-all"
               type="button"
-              disabled={!isLocalReady || isAsking}
+              disabled={isAsking}
               onClick={() => void askQuestion(question)}
             >
               {question}
@@ -360,4 +348,26 @@ function createChatMessage(role: ChatMessage['role'], content: string): ChatMess
     createdAt: Date.now(),
     status: role === 'assistant' ? 'pending' : 'complete',
   };
+}
+
+function sanitizeHtml(value: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(value, 'text/html');
+
+  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
+    node.remove();
+  });
+
+  doc.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    const attrs = Array.from(element.attributes);
+    for (const attr of attrs) {
+      const name = attr.name.toLowerCase();
+      const val = attr.value.trim().toLowerCase();
+      if (name.startsWith('on') || val.startsWith('javascript:')) {
+        element.removeAttribute(attr.name);
+      }
+    }
+  });
+
+  return doc.body.innerHTML;
 }
