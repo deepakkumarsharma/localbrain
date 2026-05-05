@@ -5,6 +5,7 @@ export type LlmProvider = 'local' | 'anthropic' | 'gemini' | 'openAi';
 export interface ProviderSettings {
   provider: LlmProvider;
   cloudEnabled: boolean;
+  localModelPath?: string;
 }
 
 export async function getProviderSettings() {
@@ -13,4 +14,20 @@ export async function getProviderSettings() {
 
 export async function setProvider(provider: LlmProvider, cloudEnabled: boolean) {
   return invoke<ProviderSettings>('set_provider', { provider, cloudEnabled });
+}
+
+export async function setLocalModelPath(path: string | null) {
+  return invoke<ProviderSettings>('set_local_model_path', { path });
+}
+
+export async function startLocalLlm() {
+  return invoke<void>('start_local_llm');
+}
+
+export async function stopLocalLlm() {
+  return invoke<void>('stop_local_llm');
+}
+
+export async function getLocalLlmStatus() {
+  return invoke<boolean>('get_local_llm_status');
 }

@@ -95,8 +95,9 @@ pub async fn start_agent_api(
                         Ok((mut stream, _)) => {
                             let metadata_store = metadata_store.clone();
                             let graph_store = graph_store.clone();
+                            let app_handle = app.clone();
                             tauri::async_runtime::spawn(async move {
-                                handle_connection(&mut stream, metadata_store, graph_store).await;
+                                handle_connection(&mut stream, metadata_store, graph_store, app_handle).await;
                             });
                         }
                         Err(error) => {
@@ -141,9 +142,10 @@ async fn handle_connection(
     stream: &mut TcpStream,
     metadata_store: MetadataStore,
     graph_store: std::sync::Arc<GraphStore>,
+    app: tauri::AppHandle,
 ) {
     let response = match read_request(stream).await {
-        Ok(request) => route_request(request, &metadata_store, &graph_store).await,
+        Ok(request) => route_request(request, &metadata_store, &graph_store, &app).await,
         Err(error) => json_response(400, serde_json::json!({ "error": error })),
     };
 
@@ -225,6 +227,7 @@ async fn route_request(
     request: HttpRequest,
     metadata_store: &MetadataStore,
     graph_store: &GraphStore,
+    app: &tauri::AppHandle,
 ) -> String {
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/status") => json_response(
@@ -261,12 +264,15 @@ async fn route_request(
             Err(error) => json_response(400, serde_json::json!({ "error": error })),
         },
         ("POST", "/explain") => match parse_json::<QueryRequest>(&request.body) {
-            Ok(payload) => match crate::llm::ask_local(&payload.query, metadata_store, graph_store)
-                .await
-            {
-                Ok(answer) => json_response(200, serde_json::json!(answer)),
-                Err(error) => json_response(500, serde_json::json!({ "error": error.to_string() })),
-            },
+            Ok(payload) => {
+                match crate::llm::ask_local(&payload.query, metadata_store, graph_store, app).await
+                {
+                    Ok(answer) => json_response(200, serde_json::json!(answer)),
+                    Err(error) => {
+                        json_response(500, serde_json::json!({ "error": error.to_string() }))
+                    }
+                }
+            }
             Err(error) => json_response(400, serde_json::json!({ "error": error })),
         },
         ("POST", "/where") | ("POST", "/trace") | ("POST", "/impact") => {

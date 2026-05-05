@@ -1,6 +1,6 @@
 # Local Brain Wiki
 
-Generated for ``.
+Generated for `localbrain`.
 
 ## Files
 
@@ -14,6 +14,7 @@ Generated for ``.
 - [src/components/Sidebar.tsx](src_components_Sidebar.tsx_5f3a5cc0.md)
 - [src/components/WikiView.tsx](src_components_WikiView.tsx_f5167789.md)
 - [src/lib/chat.ts](src_lib_chat.ts_b552033a.md)
+- [src/lib/errors.ts](src_lib_errors.ts_33a1fa95.md)
 - [src/lib/fileWatcher.ts](src_lib_fileWatcher.ts_b734e9d6.md)
 - [src/lib/graph.ts](src_lib_graph.ts_927b7c32.md)
 - [src/lib/indexer.ts](src_lib_indexer.ts_53c49062.md)

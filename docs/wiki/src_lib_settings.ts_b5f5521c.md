@@ -1,11 +1,15 @@
 # `src/lib/settings.ts`
 
-10 symbols indexed.
+18 symbols indexed.
 
 ## Functions
 
-- `getProviderSettings` at L10:8
-- `setProvider` at L14:8
+- `getProviderSettings` at L11:8
+- `setProvider` at L15:8
+- `setLocalModelPath` at L19:8
+- `startLocalLlm` at L23:8
+- `stopLocalLlm` at L27:8
+- `getLocalLlmStatus` at L31:8
 
 ## Interfaces
 
@@ -24,5 +28,9 @@
 
 - `LlmProvider` at L3:1
 - `ProviderSettings` at L5:1
-- `getProviderSettings` at L10:1
-- `setProvider` at L14:1
+- `getProviderSettings` at L11:1
+- `setProvider` at L15:1
+- `setLocalModelPath` at L19:1
+- `startLocalLlm` at L23:1
+- `stopLocalLlm` at L27:1
+- `getLocalLlmStatus` at L31:1

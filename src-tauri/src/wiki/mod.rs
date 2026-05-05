@@ -124,54 +124,225 @@ pub async fn get_wiki_content(
 }
 
 fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
+    let components = symbols_of_kind(symbols, SymbolKind::Component);
+    let functions = symbols_of_kind(symbols, SymbolKind::Function);
+    let methods = symbols_of_kind(symbols, SymbolKind::Method);
+    let classes = symbols_of_kind(symbols, SymbolKind::Class);
+    let interfaces = symbols_of_kind(symbols, SymbolKind::Interface);
+    let type_aliases = symbols_of_kind(symbols, SymbolKind::TypeAlias);
+    let enums = symbols_of_kind(symbols, SymbolKind::Enum);
+    let imports = symbols_of_kind(symbols, SymbolKind::Import);
+    let exports = symbols_of_kind(symbols, SymbolKind::Export);
+
+    let (local_imports, external_imports): (Vec<&CodeSymbol>, Vec<&CodeSymbol>) =
+        imports.iter().copied().partition(|symbol| {
+            symbol
+                .source
+                .as_deref()
+                .is_some_and(|source| source.starts_with('.') || source.starts_with('/'))
+        });
+
+    let hooks: Vec<&CodeSymbol> = functions
+        .iter()
+        .copied()
+        .filter(|symbol| {
+            symbol.name.starts_with("use")
+                && symbol
+                    .name
+                    .chars()
+                    .nth(3)
+                    .is_some_and(|character| character.is_ascii_uppercase())
+        })
+        .collect();
+
+    let module_profile = infer_module_profile(
+        file_path,
+        components.len(),
+        hooks.len(),
+        classes.len(),
+        interfaces.len() + type_aliases.len() + enums.len(),
+    );
+
     let mut lines = vec![
         format!("# `{file_path}`"),
         String::new(),
-        format!("{} symbols indexed.", symbols.len()),
+        format!(
+            "> Auto-generated from indexed source symbols. Parsed {} symbols.",
+            symbols.len()
+        ),
+        String::new(),
+        "## Overview".to_string(),
+        String::new(),
+        format!("- Module profile: **{}**", module_profile),
+        format!(
+            "- Structure: **{} components**, **{} functions**, **{} methods**, **{} types**, **{} imports**.",
+            components.len(),
+            functions.len(),
+            methods.len(),
+            interfaces.len() + type_aliases.len() + enums.len() + classes.len(),
+            imports.len()
+        ),
+        String::new(),
+        "## API and Entry Points".to_string(),
         String::new(),
     ];
 
-    for kind in [
-        SymbolKind::Component,
-        SymbolKind::Function,
-        SymbolKind::Class,
-        SymbolKind::Method,
-        SymbolKind::Interface,
-        SymbolKind::TypeAlias,
-        SymbolKind::Enum,
-        SymbolKind::Object,
-        SymbolKind::Import,
-        SymbolKind::Export,
-    ] {
-        let grouped: Vec<_> = symbols
-            .iter()
-            .filter(|symbol| symbol.kind == kind)
-            .collect();
-        if grouped.is_empty() {
-            continue;
+    if exports.is_empty() && components.is_empty() {
+        lines.push("- No explicit exported entry points detected.".to_string());
+    } else {
+        for symbol in exports.iter().chain(components.iter()).take(12) {
+            lines.push(format!(
+                "- `{}` ({}) at L{}:{}",
+                symbol.name,
+                human_kind_label(symbol.kind),
+                symbol.range.start_line,
+                symbol.range.start_column
+            ));
         }
+    }
 
-        lines.push(format!("## {}", kind_label(kind)));
+    lines.push(String::new());
+    lines.push("## Dependency Map".to_string());
+    lines.push(String::new());
+    lines.push("### External Libraries".to_string());
+    if external_imports.is_empty() {
+        lines.push("- None detected".to_string());
+    } else {
+        for symbol in external_imports.iter().take(20) {
+            lines.push(format!(
+                "- `{}` from `{}`",
+                symbol.name,
+                symbol.source.as_deref().unwrap_or("unknown")
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push("### Local Module Imports".to_string());
+    if local_imports.is_empty() {
+        lines.push("- None detected".to_string());
+    } else {
+        for symbol in local_imports.iter().take(20) {
+            lines.push(format!(
+                "- `{}` from `{}`",
+                symbol.name,
+                symbol.source.as_deref().unwrap_or("unknown")
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push("## Implementation Details".to_string());
+    lines.push(String::new());
+
+    if !hooks.is_empty() {
+        lines.push("### Hooks".to_string());
+        for hook in hooks.iter().take(12) {
+            lines.push(format!(
+                "- `{}` at L{}:{}",
+                hook.name, hook.range.start_line, hook.range.start_column
+            ));
+        }
         lines.push(String::new());
+    }
 
-        for symbol in grouped {
-            let mut detail = format!(
+    let internal_functions: Vec<&CodeSymbol> = functions
+        .iter()
+        .copied()
+        .filter(|symbol| !hooks.iter().any(|hook| hook.name == symbol.name))
+        .collect();
+    if !internal_functions.is_empty() {
+        lines.push("### Functions".to_string());
+        for symbol in internal_functions.iter().take(16) {
+            lines.push(format!(
                 "- `{}` at L{}:{}",
                 symbol.name, symbol.range.start_line, symbol.range.start_column
-            );
-            if let Some(parent) = &symbol.parent {
-                detail.push_str(&format!(" parent `{parent}`"));
-            }
-            if let Some(source) = &symbol.source {
-                detail.push_str(&format!(" from `{source}`"));
-            }
-            lines.push(detail);
+            ));
         }
+        lines.push(String::new());
+    }
 
+    if !methods.is_empty() {
+        lines.push("### Methods".to_string());
+        for symbol in methods.iter().take(16) {
+            lines.push(format!(
+                "- `{}` at L{}:{}",
+                symbol.name, symbol.range.start_line, symbol.range.start_column
+            ));
+        }
+        lines.push(String::new());
+    }
+
+    let type_symbols = classes
+        .iter()
+        .chain(interfaces.iter())
+        .chain(type_aliases.iter())
+        .chain(enums.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    if !type_symbols.is_empty() {
+        lines.push("### Types and Models".to_string());
+        for symbol in type_symbols.iter().take(16) {
+            lines.push(format!(
+                "- `{}` ({}) at L{}:{}",
+                symbol.name,
+                human_kind_label(symbol.kind),
+                symbol.range.start_line,
+                symbol.range.start_column
+            ));
+        }
         lines.push(String::new());
     }
 
     format!("{}\n", lines.join("\n"))
+}
+
+fn symbols_of_kind(symbols: &[CodeSymbol], kind: SymbolKind) -> Vec<&CodeSymbol> {
+    symbols
+        .iter()
+        .filter(|symbol| symbol.kind == kind)
+        .collect()
+}
+
+fn human_kind_label(kind: SymbolKind) -> &'static str {
+    match kind {
+        SymbolKind::Function => "function",
+        SymbolKind::Component => "component",
+        SymbolKind::Class => "class",
+        SymbolKind::Method => "method",
+        SymbolKind::Object => "object",
+        SymbolKind::Enum => "enum",
+        SymbolKind::Interface => "interface",
+        SymbolKind::TypeAlias => "type alias",
+        SymbolKind::Import => "import",
+        SymbolKind::Export => "export",
+    }
+}
+
+fn infer_module_profile(
+    file_path: &str,
+    component_count: usize,
+    hook_count: usize,
+    class_count: usize,
+    type_count: usize,
+) -> &'static str {
+    if component_count > 0 {
+        return "UI component module";
+    }
+    if hook_count > 0 {
+        return "React hook module";
+    }
+    if class_count > 0 {
+        return "Object-oriented service/module";
+    }
+    if type_count > 0 {
+        return "Type/model definition module";
+    }
+    if file_path.ends_with(".json") || file_path.ends_with(".toml") || file_path.ends_with(".yaml")
+    {
+        return "Configuration module";
+    }
+    "General utility/module"
 }
 
 fn wiki_output_dir(root: &Path) -> PathBuf {
@@ -200,21 +371,6 @@ fn wiki_file_name(path: &str) -> String {
     let digest = Sha256::digest(path.as_bytes());
     let hash = format!("{:x}", digest);
     format!("{sanitized}_{}.md", &hash[..8])
-}
-
-fn kind_label(kind: SymbolKind) -> &'static str {
-    match kind {
-        SymbolKind::Function => "Functions",
-        SymbolKind::Component => "Components",
-        SymbolKind::Class => "Classes",
-        SymbolKind::Method => "Methods",
-        SymbolKind::Object => "Objects",
-        SymbolKind::Enum => "Enums",
-        SymbolKind::Interface => "Interfaces",
-        SymbolKind::TypeAlias => "Type Aliases",
-        SymbolKind::Import => "Imports",
-        SymbolKind::Export => "Exports",
-    }
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@
   --color-graph-api: 52 211 153;
   --color-graph-service: 251 191 36;
   --color-graph-model: 248 113 113;
+  --color-graph-hook: 56 189 248;
+  --color-graph-external: 244 114 182;
   --color-graph-node-fill: 15 23 42;
   --color-graph-node-active: 30 58 138;
   --color-graph-edge: 71 85 105;
@@ -61,6 +63,8 @@
   --color-graph-api: 5 150 105;
   --color-graph-service: 217 119 6;
   --color-graph-model: 220 38 38;
+  --color-graph-hook: 2 132 199;
+  --color-graph-external: 190 24 93;
   --color-graph-node-fill: 255 255 255;
   --color-graph-node-active: 219 234 254;
   --color-graph-edge: 148 163 184;

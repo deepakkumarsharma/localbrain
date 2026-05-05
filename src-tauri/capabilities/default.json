@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop capability for Local Brain",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": ["core:default", "opener:default", "dialog:default", "shell:default"]
 }

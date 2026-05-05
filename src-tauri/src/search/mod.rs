@@ -316,7 +316,41 @@ fn document_kind(path: &Path) -> &'static str {
 fn is_searchable_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension, "js" | "jsx" | "ts" | "tsx" | "md"))
+        .is_some_and(|extension| {
+            matches!(
+                extension,
+                "js" | "jsx"
+                    | "ts"
+                    | "tsx"
+                    | "rs"
+                    | "py"
+                    | "java"
+                    | "go"
+                    | "c"
+                    | "h"
+                    | "cpp"
+                    | "hpp"
+                    | "cs"
+                    | "php"
+                    | "rb"
+                    | "swift"
+                    | "kt"
+                    | "kts"
+                    | "scala"
+                    | "html"
+                    | "css"
+                    | "scss"
+                    | "json"
+                    | "yaml"
+                    | "yml"
+                    | "toml"
+                    | "xml"
+                    | "sql"
+                    | "sh"
+                    | "md"
+                    | "txt"
+            )
+        })
 }
 
 fn is_ignored_path(path: &Path) -> bool {

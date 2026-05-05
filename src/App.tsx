@@ -9,8 +9,8 @@ import { useAppStore } from './store/useAppStore';
 
 export default function App() {
   const { setAppVersion, theme, toggleTheme, setIndexPathResult } = useAppStore();
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [rightPanelWidth, setRightPanelWidth] = useState(450);
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
 
@@ -82,10 +82,10 @@ export default function App() {
 
   const resize = useCallback((e: MouseEvent) => {
     if (isResizingSidebar.current) {
-      const newWidth = Math.min(Math.max(200, e.clientX), 400);
+      const newWidth = Math.min(Math.max(300, e.clientX), 500);
       setSidebarWidth(newWidth);
     } else if (isResizingRightPanel.current) {
-      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
+      const newWidth = Math.min(Math.max(300, window.innerWidth - e.clientX), 600);
       setRightPanelWidth(newWidth);
     }
   }, []);

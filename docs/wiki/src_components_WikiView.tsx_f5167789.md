@@ -1,16 +1,20 @@
 # `src/components/WikiView.tsx`
 
-14 symbols indexed.
+18 symbols indexed.
 
 ## Functions
 
 - `WikiView` at L7:8
-- `handleWikiClick` at L45:9
-- `wikiFileName` at L110:1
+- `handleWikiClick` at L34:9
+- `MetaPill` at L236:1
+- `wikiFileName` at L265:1
 
 ## Imports
 
+- `BookText` at L1:1 from `lucide-react`
+- `FileCode2` at L1:1 from `lucide-react`
 - `ShieldCheck` at L1:1 from `lucide-react`
+- `Sparkles` at L1:1 from `lucide-react`
 - `lucide-react` at L1:1 from `lucide-react`
 - `marked` at L2:1 from `marked`
 - `react` at L3:1 from `react`

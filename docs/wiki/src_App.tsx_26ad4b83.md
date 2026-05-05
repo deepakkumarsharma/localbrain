@@ -1,18 +1,21 @@
 # `src/App.tsx`
 
-19 symbols indexed.
+22 symbols indexed.
 
 ## Functions
 
 - `App` at L10:16
-- `handleKeyDown` at L44:5
+- `handleKeyDown` at L48:5
 
 ## Imports
 
 - `@tauri-apps/api/core` at L1:1 from `@tauri-apps/api/core`
 - `invoke` at L1:1 from `@tauri-apps/api/core`
 - `react` at L2:1 from `react`
+- `useCallback` at L2:1 from `react`
 - `useEffect` at L2:1 from `react`
+- `useRef` at L2:1 from `react`
+- `useState` at L2:1 from `react`
 - `./components/MainPanel` at L3:1 from `./components/MainPanel`
 - `MainPanel` at L3:1 from `./components/MainPanel`
 - `./components/RightPanel` at L4:1 from `./components/RightPanel`
