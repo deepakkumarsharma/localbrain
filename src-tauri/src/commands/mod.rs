@@ -69,9 +69,11 @@ pub fn get_graph_view(
     path: String,
     limit: Option<usize>,
     store: tauri::State<GraphStore>,
+    metadata_store: tauri::State<'_, MetadataStore>,
 ) -> Result<GraphView, String> {
+    let display_path = metadata_store.normalize_path(&path);
     store
-        .get_graph_view(&path, limit.unwrap_or(40))
+        .get_graph_view(&display_path, limit.unwrap_or(40))
         .map_err(|error| error.to_string())
 }
 
@@ -189,6 +191,16 @@ pub async fn ask_local(
     graph_store: tauri::State<'_, GraphStore>,
 ) -> Result<ChatAnswer, String> {
     crate::llm::ask_local(&query, &metadata_store, &graph_store)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn get_wiki_content(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<Option<String>, String> {
+    crate::wiki::get_wiki_content(path, &metadata_store)
         .await
         .map_err(|error| error.to_string())
 }

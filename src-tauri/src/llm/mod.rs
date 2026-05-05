@@ -65,9 +65,8 @@ fn graph_context_for_results(
     let mut contexts = Vec::new();
 
     for result in results.iter().take(3) {
-        if let Ok(mut context) = graph_store.get_graph_context(&result.path, 24) {
-            contexts.append(&mut context);
-        }
+        let mut context = graph_store.get_graph_context(&result.path, 24)?;
+        contexts.append(&mut context);
     }
 
     contexts.sort_by(|left, right| {
@@ -77,6 +76,7 @@ fn graph_context_for_results(
     });
     contexts.dedup_by(|left, right| {
         left.path == right.path
+            && left.relation == right.relation
             && left.symbol.name == right.symbol.name
             && left.symbol.range.start_line == right.symbol.range.start_line
     });

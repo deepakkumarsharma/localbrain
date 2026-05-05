@@ -1,10 +1,11 @@
 # `src/lib/wiki.ts`
 
-6 symbols indexed.
+8 symbols indexed.
 
 ## Functions
 
-- `generateWiki` at L11:8
+- `generate_wiki` at L11:8
+- `getWikiContent` at L15:8
 
 ## Interfaces
 
@@ -18,4 +19,5 @@
 ## Exports
 
 - `WikiSummary` at L3:1
-- `generateWiki` at L11:1
+- `generate_wiki` at L11:1
+- `getWikiContent` at L15:1

@@ -16,8 +16,8 @@ use api::{get_agent_api_status, start_agent_api, stop_agent_api, AgentApiState};
 use commands::{
     ask_local, check_file_changed, generate_wiki, get_app_version, get_file_metadata,
     get_graph_context, get_graph_symbols, get_graph_view, get_index_status, get_provider_settings,
-    hybrid_search, index_file, index_file_to_graph, index_path, parse_source_file,
-    rebuild_search_index, record_file_metadata, search_code, set_provider,
+    get_wiki_content, hybrid_search, index_file, index_file_to_graph, index_path,
+    parse_source_file, rebuild_search_index, record_file_metadata, search_code, set_provider,
 };
 use settings::SettingsStore;
 use tauri::Manager;
@@ -30,19 +30,19 @@ fn main() {
         .manage(AgentApiState::new())
         .manage(SettingsStore::new())
         .setup(|app| {
-            let log_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to resolve app data dir")
-                .join(".localbrain")
-                .join("logs");
-            logging::init_local_logging(log_dir).expect("failed to initialize local logging");
-            let store =
-                graph::GraphStore::open_default(app.handle()).expect("failed to open graph store");
+            let app_data_dir = app.path().app_data_dir().map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "failed to resolve app data dir",
+                )
+            })?;
+            let log_dir = app_data_dir.join(".localbrain").join("logs");
+            logging::init_local_logging(log_dir)?;
+            let store = graph::GraphStore::open_default(app.handle())?;
             app.manage(store);
-            let metadata_store =
-                tauri::async_runtime::block_on(metadata::MetadataStore::open_default(app.handle()))
-                    .expect("failed to open metadata store");
+            let metadata_store = tauri::async_runtime::block_on(
+                metadata::MetadataStore::open_default(app.handle()),
+            )?;
             app.manage(metadata_store);
             Ok(())
         })
@@ -57,6 +57,7 @@ fn main() {
             get_graph_view,
             get_index_status,
             get_provider_settings,
+            get_wiki_content,
             generate_wiki,
             hybrid_search,
             index_file,

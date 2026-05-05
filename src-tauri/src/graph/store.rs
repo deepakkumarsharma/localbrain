@@ -343,23 +343,77 @@ impl GraphStore {
             kind: "file".to_string(),
         }];
         let mut edges = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+        seen_ids.insert(path.to_string());
 
         for symbol in symbols.into_iter().take(normalized_limit) {
-            let symbol_node_id = format!("{}::{}::{}", path, symbol.name, symbol.range.start_line);
-            nodes.push(GraphViewNode {
-                id: symbol_node_id.clone(),
-                label: symbol.name,
-                kind: kind_label(symbol.kind).to_string(),
-            });
+            let symbol_node_id = symbol_id(path, &symbol);
+
+            if !seen_ids.contains(&symbol_node_id) {
+                nodes.push(GraphViewNode {
+                    id: symbol_node_id.clone(),
+                    label: symbol.name.clone(),
+                    kind: kind_label(symbol.kind).to_string(),
+                });
+                seen_ids.insert(symbol_node_id.clone());
+            }
+
             edges.push(GraphViewEdge {
                 id: format!("{path}->{symbol_node_id}"),
                 source: path.to_string(),
-                target: symbol_node_id,
+                target: symbol_node_id.clone(),
                 label: "contains".to_string(),
             });
+
+            // If it's an import, try to find the matching file or symbol
+            if symbol.kind == SymbolKind::Import {
+                if let Some(source) = &symbol.source {
+                    // Basic heuristic: if source matches a file path exactly or with extension
+                    let possible_paths = vec![
+                        source.clone(),
+                        format!("{source}.ts"),
+                        format!("{source}.tsx"),
+                        format!("{source}.js"),
+                        format!("src/{source}"),
+                        format!("src/{source}.ts"),
+                        format!("src/{source}.tsx"),
+                    ];
+
+                    for p in possible_paths {
+                        if self.file_exists(&p)? {
+                            if !seen_ids.contains(&p) {
+                                nodes.push(GraphViewNode {
+                                    id: p.clone(),
+                                    label: p.clone(),
+                                    kind: "file".to_string(),
+                                });
+                                seen_ids.insert(p.clone());
+                            }
+                            edges.push(GraphViewEdge {
+                                id: format!("{symbol_node_id}->{p}"),
+                                source: symbol_node_id.clone(),
+                                target: p,
+                                label: "imports".to_string(),
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         Ok(GraphView { nodes, edges })
+    }
+
+    pub fn file_exists(&self, path: &str) -> Result<bool, GraphError> {
+        let conn = self.connect()?;
+        let mut query = conn.prepare("MATCH (f:File {path: $path}) RETURN COUNT(f)")?;
+        let mut result = conn.execute(&mut query, vec![("path", path.to_string().into())])?;
+
+        match result.next().and_then(|row| row.into_iter().next()) {
+            Some(value) => Ok(value_to_usize(&value, "file_exists")? > 0),
+            None => Ok(false),
+        }
     }
 
     pub fn clear_file(&self, path: &str) -> Result<(), GraphError> {

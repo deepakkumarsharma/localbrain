@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Download, FileText, GitBranch, Search, Workflow, X } from 'lucide-react';
 import { FlowView } from './FlowView';
 import { GraphView } from './GraphView';
 import { WikiView } from './WikiView';
 import { getGraphView } from '../lib/graph';
-import { generateWiki } from '../lib/wiki';
+import { generate_wiki } from '../lib/wiki';
 import { useAppStore } from '../store/useAppStore';
 
 const views = [
@@ -27,7 +27,7 @@ export function MainPanel() {
     setWikiResult,
   } = useAppStore();
 
-  async function handleOpenGraph() {
+  const handleOpenGraph = useCallback(async () => {
     try {
       const view = await getGraphView(activeSourcePath, 40);
       setGraphView(view);
@@ -35,11 +35,17 @@ export function MainPanel() {
     } catch (error) {
       setGraphError(error instanceof Error ? error.message : String(error));
     }
-  }
+  }, [activeSourcePath, setActivePanel, setGraphError, setGraphView]);
+
+  useEffect(() => {
+    if (activePanel === 'graph') {
+      void handleOpenGraph();
+    }
+  }, [activePanel, activeSourcePath, handleOpenGraph]);
 
   async function handleExportWiki() {
     try {
-      const summary = await generateWiki('.');
+      const summary = await generate_wiki('.');
       setWikiResult(summary);
       setActivePanel('wiki');
     } catch (error) {
@@ -91,13 +97,13 @@ export function MainPanel() {
 
   return (
     <main className="flex min-w-0 flex-col bg-app-background">
-      <div className="flex h-11 items-center justify-between border-b border-app-border bg-app-panel/70 px-3">
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-1">
+      <div className="flex h-14 items-center justify-between border-b border-app-border bg-app-panel/80 px-4 backdrop-blur-md">
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-2">
             {views.map((view) => (
               <button
                 key={view.id}
-                className="border-b-2 border-transparent px-3 py-2 text-[13px] font-medium text-app-muted hover:text-app-text data-[active=true]:border-app-accent data-[active=true]:text-app-text"
+                className="border-b-2 border-transparent px-4 py-3 text-[14px] font-bold text-app-muted hover:text-app-text transition-all data-[active=true]:border-app-accent data-[active=true]:text-app-text"
                 data-active={activePanel === view.id}
                 type="button"
                 onClick={() => {
@@ -111,29 +117,29 @@ export function MainPanel() {
               </button>
             ))}
           </div>
-          <div className="hidden items-center gap-2 text-[11px] text-app-muted lg:flex">
-            <Legend label="Feature" color="bg-blue-500" />
-            <Legend label="Component" color="bg-violet-500" />
-            <Legend label="API" color="bg-emerald-500" />
-            <Legend label="Service" color="bg-amber-500" />
-            <Legend label="Model" color="bg-red-500" />
+          <div className="hidden items-center gap-5 text-[12px] font-bold text-app-muted lg:flex">
+            <Legend label="Feature" color="bg-blue-400" />
+            <Legend label="Component" color="bg-violet-400" />
+            <Legend label="API" color="bg-emerald-400" />
+            <Legend label="Service" color="bg-amber-400" />
+            <Legend label="Model" color="bg-red-400" />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
-            className="flex h-8 items-center gap-1.5 rounded-md border border-app-border bg-app-panel px-2.5 text-xs hover:bg-app-panelSoft"
+            className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"
             type="button"
             onClick={handleExportWiki}
           >
-            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            <Download className="h-4 w-4" aria-hidden="true" />
             Export Wiki
           </button>
           <button
-            className="flex h-8 items-center gap-1.5 rounded-md border border-app-border bg-app-panel px-2.5 text-xs hover:bg-app-panelSoft"
+            className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"
             type="button"
             onClick={() => setIsCommandOpen(true)}
           >
-            <Search className="h-3.5 w-3.5" aria-hidden="true" />
+            <Search className="h-4 w-4" aria-hidden="true" />
             ⌘K
           </button>
         </div>
@@ -147,44 +153,52 @@ export function MainPanel() {
         {activePanel === 'flow' ? <FlowView /> : null}
       </section>
 
-      <div className="flex h-6 items-center justify-between border-t border-app-border bg-app-panel px-3 text-[10px] text-app-muted">
-        <span>All data runs locally · SQLite + graph store · no cloud sync</span>
-        <span>v0.1.0</span>
+      <div className="flex h-8 items-center justify-between border-t border-app-border bg-app-panel px-4 text-[11px] font-bold text-app-muted">
+        <span>ALL DATA RUNS LOCALLY · SQLITE + GRAPH STORE · NO CLOUD SYNC</span>
+        <span className="bg-app-panelSoft px-2 py-0.5 rounded border border-app-border">
+          v0.1.0
+        </span>
       </div>
 
       {isCommandOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]">
-          <div className="w-[520px] overflow-hidden rounded-xl border border-app-border bg-app-panel shadow-2xl">
-            <div className="flex h-11 items-center gap-2 border-b border-app-border px-3">
-              <Search className="h-4 w-4 text-app-muted" aria-hidden="true" />
-              <span className="text-sm font-medium">Command palette</span>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm pt-[15vh]">
+          <div className="w-[600px] overflow-hidden rounded-2xl border border-app-border bg-app-panel shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
+            <div className="flex h-14 items-center gap-3 border-b border-app-border px-4">
+              <Search className="h-5 w-5 text-app-muted" aria-hidden="true" />
+              <span className="text-base font-bold">Command palette</span>
               <button
-                className="ml-auto rounded-md p-1 text-app-muted hover:bg-app-panelSoft hover:text-app-text"
+                className="ml-auto rounded-lg p-1.5 text-app-muted hover:bg-app-panelSoft hover:text-app-text transition-colors"
                 type="button"
                 aria-label="Close command palette"
                 onClick={() => setIsCommandOpen(false)}
               >
-                <X className="h-4 w-4" aria-hidden="true" />
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
-            <div className="p-2">
+            <div className="p-3">
               {commandItems.map((item) => {
                 const Icon = item.icon;
 
                 return (
                   <button
                     key={item.label}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-app-panelSoft"
+                    className="flex w-full items-center gap-4 rounded-xl px-4 py-3 text-left hover:bg-app-panelSoft group transition-all"
                     type="button"
                     onClick={() => {
                       item.run();
                       setIsCommandOpen(false);
                     }}
                   >
-                    <Icon className="h-4 w-4 text-app-accent" aria-hidden="true" />
+                    <div className="p-2.5 rounded-lg bg-app-panel group-hover:bg-app-background transition-colors">
+                      <Icon className="h-5 w-5 text-app-accent" aria-hidden="true" />
+                    </div>
                     <span className="min-w-0">
-                      <span className="block text-sm font-medium text-app-text">{item.label}</span>
-                      <span className="block truncate text-xs text-app-muted">{item.detail}</span>
+                      <span className="block text-[15px] font-bold text-app-text">
+                        {item.label}
+                      </span>
+                      <span className="block truncate text-[13px] font-medium text-app-muted mt-0.5">
+                        {item.detail}
+                      </span>
                     </span>
                   </button>
                 );
@@ -199,8 +213,8 @@ export function MainPanel() {
 
 function Legend({ label, color }: { label: string; color: string }) {
   return (
-    <span className="flex items-center gap-1">
-      <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
+    <span className="flex items-center gap-2">
+      <span className={`h-2 w-2 rounded-full ${color} shadow-[0_0_8px_currentColor]`} />
       {label}
     </span>
   );

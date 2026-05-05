@@ -80,7 +80,8 @@ pub async fn start_agent_api(
         .await
         .map_err(|error| error.to_string())?;
     let metadata_store = metadata_store.inner().clone();
-    let graph_store = GraphStore::open_default(&app).map_err(|error| error.to_string())?;
+    let graph_store =
+        std::sync::Arc::new(GraphStore::open_default(&app).map_err(|error| error.to_string())?);
     let (shutdown, mut shutdown_rx) = oneshot::channel();
 
     let handle = tauri::async_runtime::spawn(async move {
@@ -91,10 +92,12 @@ pub async fn start_agent_api(
                 }
                 accepted = listener.accept() => {
                     match accepted {
-                        Ok((stream, _)) => {
+                        Ok((mut stream, _)) => {
                             let metadata_store = metadata_store.clone();
-                            let graph_store = GraphStoreHandle::new(&graph_store);
-                            handle_connection(stream, metadata_store, graph_store).await;
+                            let graph_store = graph_store.clone();
+                            tauri::async_runtime::spawn(async move {
+                                handle_connection(&mut stream, metadata_store, graph_store).await;
+                            });
                         }
                         Err(error) => {
                             eprintln!("Agent API accept error: {error}");
@@ -134,23 +137,13 @@ pub fn get_agent_api_status(
     state.status()
 }
 
-struct GraphStoreHandle<'a> {
-    store: &'a GraphStore,
-}
-
-impl<'a> GraphStoreHandle<'a> {
-    fn new(store: &'a GraphStore) -> Self {
-        Self { store }
-    }
-}
-
 async fn handle_connection(
-    mut stream: TcpStream,
+    stream: &mut TcpStream,
     metadata_store: MetadataStore,
-    graph_store: GraphStoreHandle<'_>,
+    graph_store: std::sync::Arc<GraphStore>,
 ) {
-    let response = match read_request(&mut stream).await {
-        Ok(request) => route_request(request, &metadata_store, graph_store.store).await,
+    let response = match read_request(stream).await {
+        Ok(request) => route_request(request, &metadata_store, &graph_store).await,
         Err(error) => json_response(400, serde_json::json!({ "error": error })),
     };
 
@@ -166,16 +159,48 @@ struct HttpRequest {
 }
 
 async fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
-    let mut buffer = vec![0_u8; 16 * 1024];
-    let bytes_read = stream
-        .read(&mut buffer)
-        .await
-        .map_err(|error| error.to_string())?;
-    let raw = String::from_utf8_lossy(&buffer[..bytes_read]);
-    let (headers, body) = raw
-        .split_once("\r\n\r\n")
-        .ok_or_else(|| "invalid HTTP request".to_string())?;
-    let mut lines = headers.lines();
+    let mut accumulator = Vec::new();
+    let mut buffer = vec![0_u8; 4096];
+    let mut headers_end = None;
+
+    loop {
+        let bytes_read = stream.read(&mut buffer).await.map_err(|e| e.to_string())?;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+        accumulator.extend_from_slice(&buffer[..bytes_read]);
+
+        if let Some(pos) = accumulator.windows(4).position(|w| w == b"\r\n\r\n") {
+            headers_end = Some(pos);
+            break;
+        }
+    }
+
+    let headers_end = headers_end.ok_or_else(|| "invalid HTTP request (no headers)".to_string())?;
+    let raw_headers = String::from_utf8_lossy(&accumulator[..headers_end]).into_owned();
+    let mut content_length = 0;
+
+    for line in raw_headers.lines() {
+        if line.to_lowercase().starts_with("content-length:") {
+            if let Some(val) = line.split(':').nth(1) {
+                content_length = val.trim().parse::<usize>().unwrap_or(0);
+            }
+        }
+    }
+
+    let body_start = headers_end + 4;
+    while accumulator.len() - body_start < content_length {
+        let bytes_read = stream.read(&mut buffer).await.map_err(|e| e.to_string())?;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+        accumulator.extend_from_slice(&buffer[..bytes_read]);
+    }
+
+    let body_end = (body_start + content_length).min(accumulator.len());
+    let body = String::from_utf8_lossy(&accumulator[body_start..body_end]);
+
+    let mut lines = raw_headers.lines();
     let request_line = lines
         .next()
         .ok_or_else(|| "missing request line".to_string())?;

@@ -1,19 +1,28 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { MainPanel } from './components/MainPanel';
 import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
 import { initFileWatcher } from './lib/fileWatcher';
+import { indexPath } from './lib/indexer';
 import { useAppStore } from './store/useAppStore';
 
 export default function App() {
-  const { setAppVersion, theme, toggleTheme } = useAppStore();
+  const { setAppVersion, theme, toggleTheme, setIndexPathResult } = useAppStore();
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const isResizingSidebar = useRef(false);
+  const isResizingRightPanel = useRef(false);
 
   useEffect(() => {
     void invoke<string>('get_app_version')
       .then(setAppVersion)
       .catch(() => setAppVersion('unknown'));
-  }, [setAppVersion]);
+
+    void indexPath('.')
+      .then(setIndexPathResult)
+      .catch((error) => console.error('Initial index failed:', error));
+  }, [setAppVersion, setIndexPathResult]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -52,11 +61,66 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleTheme]);
 
+  const startResizingSidebar = useCallback(() => {
+    isResizingSidebar.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const startResizingRightPanel = useCallback(() => {
+    isResizingRightPanel.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizingSidebar.current = false;
+    isResizingRightPanel.current = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizingSidebar.current) {
+      const newWidth = Math.min(Math.max(200, e.clientX), 400);
+      setSidebarWidth(newWidth);
+    } else if (isResizingRightPanel.current) {
+      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
+      setRightPanelWidth(newWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
+
   return (
-    <div className="grid h-screen min-w-[1180px] grid-cols-[260px_minmax(0,1fr)_320px] overflow-hidden bg-app-background text-app-text">
-      <Sidebar />
+    <div
+      className="grid h-screen min-w-[1180px] overflow-hidden bg-app-background text-app-text"
+      style={{
+        gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
+      }}
+    >
+      <div className="relative h-full overflow-hidden">
+        <Sidebar />
+        <div
+          className="absolute right-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
+          onMouseDown={startResizingSidebar}
+        />
+      </div>
       <MainPanel />
-      <RightPanel />
+      <div className="relative h-full overflow-hidden">
+        <div
+          className="absolute left-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
+          onMouseDown={startResizingRightPanel}
+        />
+        <RightPanel />
+      </div>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import * as d3 from 'd3';
+import { useEffect, useRef } from 'react';
 import type { GraphViewData, GraphViewNode } from '../lib/graph';
 
 interface GraphViewProps {
@@ -5,140 +7,206 @@ interface GraphViewProps {
   onSelectNode: (node: GraphViewNode) => void;
 }
 
-const fallbackNodes: GraphViewNode[] = [
-  { id: 'feature-login', label: 'Localbrain', kind: 'file' },
-  { id: 'parser', label: 'Parser', kind: 'component' },
-  { id: 'graph', label: 'GraphStore', kind: 'component' },
-  { id: 'search', label: 'Hybrid Search', kind: 'function' },
-  { id: 'wiki', label: 'Wiki', kind: 'function' },
-  { id: 'chat', label: 'ask_local', kind: 'function' },
-  { id: 'api', label: 'Agent API', kind: 'import' },
-  { id: 'metadata', label: 'SQLite', kind: 'class' },
-];
+interface D3Node extends GraphViewNode, d3.SimulationNodeDatum {
+  color: string;
+}
 
-const fallbackEdges = [
-  ['feature-login', 'parser'],
-  ['parser', 'graph'],
-  ['graph', 'search'],
-  ['search', 'chat'],
-  ['graph', 'wiki'],
-  ['chat', 'api'],
-  ['search', 'metadata'],
-];
+interface D3Link extends d3.SimulationLinkDatum<D3Node> {
+  source: string | D3Node;
+  target: string | D3Node;
+}
 
 export function GraphView({ data, onSelectNode }: GraphViewProps) {
-  const nodes = data?.nodes.length ? data.nodes.slice(0, 12) : fallbackNodes;
-  const edges = data?.edges.length
-    ? data.edges.map((edge) => [edge.source, edge.target])
-    : fallbackEdges;
-  const width = 1180;
-  const height = 720;
-  const positioned = layoutNodes(nodes, width, height);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!svgRef.current || !containerRef.current || !data) {
+      return;
+    }
+
+    const width = containerRef.current.clientWidth;
+    const height = containerRef.current.clientHeight;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove(); // Clear previous render
+
+    const g = svg.append('g');
+
+    // Zoom setup
+    const zoom = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+      });
+
+    svg.call(zoom);
+
+    // Arrow marker
+    svg
+      .append('defs')
+      .append('marker')
+      .attr('id', 'arrow')
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 28)
+      .attr('refY', 0)
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('fill', 'rgb(var(--color-app-border))');
+
+    // Data preparation
+    const nodes: D3Node[] = data.nodes.map((node) => ({
+      ...node,
+      color: nodeColor(node.kind),
+    }));
+
+    const links: D3Link[] = data.edges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+    }));
+
+    // Simulation setup
+    const simulation = d3
+      .forceSimulation<D3Node>(nodes)
+      .force(
+        'link',
+        d3
+          .forceLink<D3Node, D3Link>(links)
+          .id((d) => d.id)
+          .distance(150)
+          .strength(1),
+      )
+      .force('charge', d3.forceManyBody().strength(-800))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collide', d3.forceCollide(60));
+
+    // Links rendering
+    const link = g
+      .append('g')
+      .selectAll('line')
+      .data(links)
+      .join('line')
+      .attr('stroke', 'rgb(var(--color-graph-edge))')
+      .attr('stroke-opacity', 0.6)
+      .attr('stroke-width', 1.5)
+      .attr('marker-end', 'url(#arrow)');
+
+    // Nodes rendering
+    const node = g
+      .append('g')
+      .selectAll<SVGGElement, D3Node>('g')
+      .data(nodes)
+      .join('g')
+      .attr(
+        'class',
+        'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-app-accent rounded-full',
+      )
+      .attr('tabindex', 0)
+      .attr('role', 'button')
+      .attr('aria-label', (d) => d.label || 'graph node')
+      .call(
+        d3
+          .drag<SVGGElement, D3Node>()
+          .on('start', dragstarted)
+          .on('drag', dragged)
+          .on('end', dragended),
+      )
+      .on('click', (_event, d) => {
+        onSelectNode(d);
+      })
+      .on('keydown', (event, d) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelectNode(d);
+        }
+      });
+
+    node
+      .append('circle')
+      .attr('r', (d) => (d.kind === 'file' ? 28 : 24))
+      .attr('fill', (d) => d.color)
+      .attr('fill-opacity', 0.15)
+      .attr('stroke', (d) => d.color)
+      .attr('stroke-width', (d) => (d.kind === 'file' ? 2.5 : 1.5));
+
+    node
+      .append('circle')
+      .attr('r', (d) => (d.kind === 'file' ? 10 : 8))
+      .attr('fill', (d) => d.color);
+
+    node
+      .append('text')
+      .attr('y', (d) => (d.kind === 'file' ? 45 : 40))
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '11px')
+      .attr('font-weight', 'bold')
+      .attr('fill', 'rgb(var(--color-app-text))')
+      .text((d) => {
+        const label = d.kind === 'file' ? d.label.split('/').pop() || d.label : d.label;
+        return label.length > 20 ? label.slice(0, 17) + '...' : label;
+      });
+
+    // Simulation tick
+    simulation.on('tick', () => {
+      link
+        .attr('x1', (d) => (d.source as D3Node).x!)
+        .attr('y1', (d) => (d.source as D3Node).y!)
+        .attr('x2', (d) => (d.target as D3Node).x!)
+        .attr('y2', (d) => (d.target as D3Node).y!);
+
+      node.attr('transform', (d) => `translate(${d.x},${d.y})`);
+    });
+
+    function dragstarted(event: d3.D3DragEvent<SVGGElement, D3Node, D3Node>, d: D3Node) {
+      if (!event.active) {
+        simulation.alphaTarget(0.3).restart();
+      }
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event: d3.D3DragEvent<SVGGElement, D3Node, D3Node>, d: D3Node) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragended(event: d3.D3DragEvent<SVGGElement, D3Node, D3Node>, d: D3Node) {
+      if (!event.active) {
+        simulation.alphaTarget(0);
+      }
+      d.fx = null;
+      d.fy = null;
+    }
+
+    return () => {
+      simulation.stop();
+    };
+  }, [data, onSelectNode]);
 
   return (
-    <div className="absolute inset-0 bg-app-background">
-      <div className="absolute left-3 top-3 z-10 flex items-center gap-2">
+    <div ref={containerRef} className="absolute inset-0 bg-app-background overflow-hidden">
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-2 pointer-events-none">
         <div className="rounded-lg border border-app-border bg-app-panel/90 px-2.5 py-1.5 text-[11px]">
-          <span className="text-app-muted">Path:</span>{' '}
-          <span className="font-medium text-app-text">{nodes[0]?.label ?? 'Localbrain'}</span>
+          <span className="text-app-muted">Nodes:</span>{' '}
+          <span className="font-medium text-app-text">{data?.nodes.length ?? 0}</span>
         </div>
         <div className="rounded-lg border border-app-border bg-app-panel/90 px-2.5 py-1.5 text-[11px] text-app-muted">
-          {nodes.length} nodes · {edges.length} edges
+          Drag to explore · Scroll to zoom
         </div>
       </div>
-
-      <svg
-        className="h-full w-full"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="Knowledge graph"
-      >
-        <defs>
-          <marker
-            id="graph-arrow"
-            viewBox="0 -5 10 10"
-            refX="24"
-            refY="0"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto"
-          >
-            <path d="M0,-5L10,0L0,5" fill="rgb(var(--color-app-border))" />
-          </marker>
-        </defs>
-
-        {edges.map(([sourceId, targetId], index) => {
-          const source = positioned.get(sourceId);
-          const target = positioned.get(targetId);
-          if (!source || !target) {
-            return null;
-          }
-
-          return (
-            <line
-              key={`${sourceId}-${targetId}-${index}`}
-              x1={source.x}
-              y1={source.y}
-              x2={target.x}
-              y2={target.y}
-              stroke="rgb(var(--color-graph-edge))"
-              strokeOpacity="0.75"
-              strokeWidth="2"
-              markerEnd="url(#graph-arrow)"
-            />
-          );
-        })}
-
-        {nodes.map((node) => {
-          const position = positioned.get(node.id);
-          if (!position) {
-            return null;
-          }
-          const color = nodeColor(node.kind);
-
-          return (
-            <g
-              key={node.id}
-              className="cursor-pointer transition-opacity hover:opacity-90"
-              transform={`translate(${position.x}, ${position.y})`}
-              onClick={() => onSelectNode(node)}
-            >
-              <circle r="23" fill={color} fillOpacity="0.18" stroke={color} strokeWidth="1.7" />
-              <circle r="8" fill={color} />
-              <text
-                y="38"
-                textAnchor="middle"
-                className="pointer-events-none fill-app-text text-[11px] font-semibold"
-              >
-                {shortLabel(node.label)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+      <svg ref={svgRef} className="h-full w-full" />
     </div>
   );
 }
 
-function layoutNodes(nodes: GraphViewNode[], width: number, height: number) {
-  const positions = new Map<string, { x: number; y: number }>();
-  const startX = width * 0.36;
-  const startY = height * 0.22;
-  const stepX = 130;
-  const stepY = 76;
-
-  nodes.forEach((node, index) => {
-    const bend = index % 3 === 0 ? -42 : index % 3 === 1 ? 0 : 42;
-    positions.set(node.id, {
-      x: startX + Math.min(index, 4) * stepX + (index > 4 ? (index - 4) * 30 : 0),
-      y: startY + index * stepY + bend,
-    });
-  });
-
-  return positions;
-}
-
 function nodeColor(kind: string) {
+  if (kind === 'file') {
+    return 'rgb(var(--color-app-text))';
+  }
   if (kind === 'component') {
     return 'rgb(var(--color-graph-component))';
   }
@@ -151,10 +219,5 @@ function nodeColor(kind: string) {
   if (kind === 'method' || kind === 'function') {
     return 'rgb(var(--color-graph-service))';
   }
-
   return 'rgb(var(--color-graph-feature))';
-}
-
-function shortLabel(label: string) {
-  return label.length > 18 ? `${label.slice(0, 15)}...` : label;
 }

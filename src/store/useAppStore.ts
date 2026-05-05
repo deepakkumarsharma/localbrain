@@ -80,7 +80,7 @@ export const useAppStore = create<AppState>((set) => ({
   activePanel: 'graph',
   appVersion: 'loading',
   theme: 'dark',
-  activeSourcePath: 'src/App.tsx',
+  activeSourcePath: '',
   lastFileChange: null,
   lastFileChangeAt: null,
   parsedFile: null,
@@ -135,11 +135,12 @@ export const useAppStore = create<AppState>((set) => ({
       graphError: null,
     }),
   setIndexPathResult: (summary) =>
-    set({
+    set((state) => ({
       indexPathSummary: summary,
       indexRun: summary.run,
       indexError: summary.errors.length > 0 ? summary.errors.join('\n') : null,
-    }),
+      activeSourcePath: state.activeSourcePath || summary.files?.[0]?.path || '',
+    })),
   setIndexRun: (run) => set({ indexRun: run }),
   setIndexError: (error) => set({ indexError: error }),
   setWikiResult: (summary) =>
