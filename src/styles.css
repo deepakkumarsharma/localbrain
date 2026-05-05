@@ -3,24 +3,39 @@
 @tailwind utilities;
 
 :root {
-  --color-app-background: 16 19 26;
-  --color-app-panel: 23 27 36;
-  --color-app-panel-soft: 32 38 54;
-  --color-app-border: 47 56 72;
-  --color-app-text: 232 237 245;
-  --color-app-muted: 154 167 184;
-  --color-app-accent: 155 183 255;
-  --color-app-accent-soft: 38 54 87;
-  --color-app-success: 125 223 179;
-  --color-app-warning: 255 209 102;
-  --color-app-error: 255 154 162;
-  font-family: 'Geist Sans', system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  font-weight: 400;
+  /* Dark Mode Palette - Higher Contrast */
+  --color-app-background: 3 3 5;
+  --color-app-panel: 9 9 12;
+  --color-app-panel-soft: 18 18 22;
+  --color-app-border: 45 45 55;
+  --color-app-text: 255 255 255; /* Pure white for primary text */
+  --color-app-muted: 161 161 170; /* zinc-400 for better secondary readability */
+  --color-app-accent: 96 165 250; /* blue-400 */
+  --color-app-accent-soft: 30 58 138;
+  --color-app-success: 52 211 153; /* emerald-400 */
+  --color-app-warning: 251 191 36; /* amber-400 */
+  --color-app-error: 248 113 113; /* red-400 */
+
+  --color-graph-feature: 96 165 250;
+  --color-graph-component: 167 139 250;
+  --color-graph-api: 52 211 153;
+  --color-graph-service: 251 191 36;
+  --color-graph-model: 248 113 113;
+  --color-graph-node-fill: 15 23 42;
+  --color-graph-node-active: 30 58 138;
+  --color-graph-edge: 71 85 105;
+
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 16px; /* Increased base size */
+  line-height: 1.6;
+  font-weight: 450; /* Slightly bolder base weight */
   color-scheme: dark;
-  background: #10131a;
-  color: #e8edf5;
+  background: #030305;
+  color: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -28,27 +43,63 @@
 }
 
 :root[data-theme='light'] {
-  --color-app-background: 248 250 252;
+  /* Light Mode Palette - Richer Contrast */
+  --color-app-background: 241 245 249;
   --color-app-panel: 255 255 255;
-  --color-app-panel-soft: 241 245 249;
-  --color-app-border: 219 228 238;
-  --color-app-text: 30 41 59;
-  --color-app-muted: 100 116 139;
-  --color-app-accent: 124 156 255;
-  --color-app-accent-soft: 231 237 255;
-  --color-app-success: 107 207 159;
-  --color-app-warning: 246 199 107;
-  --color-app-error: 242 139 130;
+  --color-app-panel-soft: 226 232 240;
+  --color-app-border: 203 213 225;
+  --color-app-text: 15 23 42; /* slate-900 */
+  --color-app-muted: 71 85 105; /* slate-600 */
+  --color-app-accent: 37 99 235; /* blue-600 */
+  --color-app-accent-soft: 219 234 254;
+  --color-app-success: 5 150 105;
+  --color-app-warning: 217 119 6;
+  --color-app-error: 220 38 38;
 
+  --color-graph-feature: 37 99 235;
+  --color-graph-component: 124 58 237;
+  --color-graph-api: 5 150 105;
+  --color-graph-service: 217 119 6;
+  --color-graph-model: 220 38 38;
+  --color-graph-node-fill: 255 255 255;
+  --color-graph-node-active: 219 234 254;
+  --color-graph-edge: 148 163 184;
+
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
   color-scheme: light;
-  background: #f8fafc;
-  color: #1e293b;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
   min-width: 1024px;
   min-height: 100vh;
+  letter-spacing: -0.015em;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.025em;
+  font-weight: 700 !important; /* Force bold for all headings */
+}
+
+.font-display {
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 button,
@@ -56,6 +107,7 @@ input {
   font: inherit;
 }
 
+/* UI Elements */
 .app-scrollbar {
   scrollbar-color: rgb(var(--color-app-border)) transparent;
   scrollbar-width: thin;
@@ -67,19 +119,14 @@ input {
 }
 
 .app-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgb(var(--color-app-panel));
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb {
   background: rgb(var(--color-app-border));
-  border: 2px solid rgb(var(--color-app-panel));
-  border-radius: 999px;
+  border-radius: 5px;
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--color-app-muted) / 0.75);
-}
-
-.app-scrollbar::-webkit-scrollbar-corner {
-  background: transparent;
+  background: rgb(var(--color-app-muted) / 0.5);
 }

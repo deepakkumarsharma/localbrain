@@ -39,7 +39,7 @@ pub async fn generate_wiki(
     graph_store: &GraphStore,
 ) -> Result<WikiSummary, WikiError> {
     let requested_path = path.as_ref();
-    let root = metadata_store.resolve_path(requested_path);
+    let root = metadata_store.resolve_path(requested_path)?;
     let normalized_root = metadata_store.normalize_path(requested_path);
     let output_dir = wiki_output_dir(&root);
     fs::create_dir_all(&output_dir)?;
@@ -65,10 +65,19 @@ pub async fn generate_wiki(
         }
     }
 
+    let project_name = if normalized_root.is_empty() {
+        root.file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("workspace"))
+            .to_string_lossy()
+            .to_string()
+    } else {
+        normalized_root.clone()
+    };
+
     let mut index_lines = vec![
         "# Local Brain Wiki".to_string(),
         String::new(),
-        format!("Generated for `{normalized_root}`."),
+        format!("Generated for `{project_name}`."),
         String::new(),
         "## Files".to_string(),
     ];
@@ -93,6 +102,25 @@ pub async fn generate_wiki(
         index_path: index_path.display().to_string(),
         errors,
     })
+}
+
+pub async fn get_wiki_content(
+    path: impl AsRef<Path>,
+    metadata_store: &MetadataStore,
+) -> Result<Option<String>, WikiError> {
+    let requested_path = path.as_ref();
+    let root = metadata_store.resolve_path(".")?;
+    let output_dir = wiki_output_dir(&root);
+    let display_path = metadata_store.normalize_path(requested_path);
+    let file_name = wiki_file_name(&display_path);
+    let page_path = output_dir.join(file_name);
+
+    if !page_path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(page_path)?;
+    Ok(Some(content))
 }
 
 fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {

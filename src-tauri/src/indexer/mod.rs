@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 
 use crate::graph::{GraphError, GraphIngestSummary, GraphStore};
 use crate::metadata::{FileChangeStatus, FileMetadata, IndexRunSummary, MetadataStore};
-use crate::parser::{parse_file, ParserError};
+use crate::parser::{parse_file_with_display_path, ParserError};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -83,7 +83,8 @@ pub async fn index_file(
             })
         }
         FileChangeStatus::New | FileChangeStatus::Changed => {
-            let parsed = parse_file(requested_path)?;
+            let source_path = metadata_store.resolve_path(requested_path)?;
+            let parsed = parse_file_with_display_path(source_path, &normalized_path)?;
 
             // Retry logic for KuzuDB contention
             let mut last_error = None;
@@ -243,7 +244,7 @@ fn indexable_paths(
     path: &Path,
     metadata_store: &MetadataStore,
 ) -> Result<Vec<PathBuf>, IndexerError> {
-    let source_path = metadata_store.resolve_path(path);
+    let source_path = metadata_store.resolve_path(path)?;
 
     if source_path.is_file() {
         return Ok(if is_supported_source_file(&source_path) {

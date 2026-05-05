@@ -1,9 +1,11 @@
-use crate::graph::{GraphIngestSummary, GraphStore};
+use crate::graph::{GraphContext, GraphIngestSummary, GraphStore, GraphView};
 use crate::indexer::{IndexFileSummary, IndexPathSummary};
+use crate::llm::ChatAnswer;
 use crate::metadata::{FileChangeStatus, FileMetadata, IndexRunSummary, MetadataStore};
 use crate::parser::CodeSymbol;
-use crate::parser::{parse_file, ParsedFile};
+use crate::parser::{parse_file_with_display_path, ParsedFile};
 use crate::search::{SearchIndexSummary, SearchResult};
+use crate::settings::{LlmProvider, ProviderSettings, SettingsStore};
 use crate::wiki::WikiSummary;
 
 #[tauri::command]
@@ -12,16 +14,29 @@ pub fn get_app_version() -> &'static str {
 }
 
 #[tauri::command]
-pub fn parse_source_file(path: String) -> Result<ParsedFile, String> {
-    parse_file(path).map_err(|error| error.to_string())
+pub fn parse_source_file(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<ParsedFile, String> {
+    let source_path = metadata_store
+        .resolve_path(&path)
+        .map_err(|error| error.to_string())?;
+    let display_path = metadata_store.normalize_path(&path);
+    parse_file_with_display_path(source_path, &display_path).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub fn index_file_to_graph(
     path: String,
     store: tauri::State<GraphStore>,
+    metadata_store: tauri::State<'_, MetadataStore>,
 ) -> Result<GraphIngestSummary, String> {
-    let parsed = parse_file(path).map_err(|error| error.to_string())?;
+    let source_path = metadata_store
+        .resolve_path(&path)
+        .map_err(|error| error.to_string())?;
+    let display_path = metadata_store.normalize_path(&path);
+    let parsed = parse_file_with_display_path(source_path, &display_path)
+        .map_err(|error| error.to_string())?;
 
     store
         .upsert_parsed_file(&parsed)
@@ -35,6 +50,30 @@ pub fn get_graph_symbols(
 ) -> Result<Vec<CodeSymbol>, String> {
     store
         .get_symbols_for_file(&path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_graph_context(
+    target: String,
+    limit: Option<usize>,
+    store: tauri::State<GraphStore>,
+) -> Result<Vec<GraphContext>, String> {
+    store
+        .get_graph_context(&target, limit.unwrap_or(24))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_graph_view(
+    path: String,
+    limit: Option<usize>,
+    store: tauri::State<GraphStore>,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<GraphView, String> {
+    let display_path = metadata_store.normalize_path(&path);
+    store
+        .get_graph_view(&display_path, limit.unwrap_or(40))
         .map_err(|error| error.to_string())
 }
 
@@ -143,4 +182,41 @@ pub async fn hybrid_search(
     crate::search::hybrid_search(&metadata_store, &query, limit.unwrap_or(10))
         .await
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn ask_local(
+    query: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+    graph_store: tauri::State<'_, GraphStore>,
+) -> Result<ChatAnswer, String> {
+    crate::llm::ask_local(&query, &metadata_store, &graph_store)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn get_wiki_content(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<Option<String>, String> {
+    crate::wiki::get_wiki_content(path, &metadata_store)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_provider_settings(
+    settings_store: tauri::State<SettingsStore>,
+) -> Result<ProviderSettings, String> {
+    settings_store.get()
+}
+
+#[tauri::command]
+pub fn set_provider(
+    provider: LlmProvider,
+    cloud_enabled: bool,
+    settings_store: tauri::State<SettingsStore>,
+) -> Result<ProviderSettings, String> {
+    settings_store.set_provider(provider, cloud_enabled)
 }

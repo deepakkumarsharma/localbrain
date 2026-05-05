@@ -1,30 +1,28 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { CSSProperties, PointerEvent } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { MainPanel } from './components/MainPanel';
 import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
 import { initFileWatcher } from './lib/fileWatcher';
+import { indexPath } from './lib/indexer';
 import { useAppStore } from './store/useAppStore';
 
-const LARGE_SCREEN_SIDE_PANEL_MIN_WIDTH = 400;
-const LARGE_SCREEN_SIDE_PANEL_MAX_WIDTH = 600;
-const SMALL_SCREEN_SIDE_PANEL_MIN_WIDTH = 260;
-const SMALL_SCREEN_SIDE_PANEL_MAX_WIDTH = 380;
-const LEFT_PANEL_DEFAULT_WIDTH = 280;
-const RIGHT_PANEL_DEFAULT_WIDTH = 360;
-const LARGE_SCREEN_BREAKPOINT = 1440;
-
 export default function App() {
-  const { setAppVersion, theme, toggleTheme } = useAppStore();
-  const [leftPanelWidth, setLeftPanelWidth] = useState(LEFT_PANEL_DEFAULT_WIDTH);
-  const [rightPanelWidth, setRightPanelWidth] = useState(RIGHT_PANEL_DEFAULT_WIDTH);
+  const { setAppVersion, theme, toggleTheme, setIndexPathResult } = useAppStore();
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const isResizingSidebar = useRef(false);
+  const isResizingRightPanel = useRef(false);
 
   useEffect(() => {
     void invoke<string>('get_app_version')
       .then(setAppVersion)
       .catch(() => setAppVersion('unknown'));
-  }, [setAppVersion]);
+
+    void indexPath('.')
+      .then(setIndexPathResult)
+      .catch((error) => console.error('Initial index failed:', error));
+  }, [setAppVersion, setIndexPathResult]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -47,19 +45,6 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    function handleWindowResize() {
-      const bounds = getSidePanelBounds();
-      setLeftPanelWidth((width) => clamp(width, bounds.min, bounds.max));
-      setRightPanelWidth((width) => clamp(width, bounds.min, bounds.max));
-    }
-
-    handleWindowResize();
-    window.addEventListener('resize', handleWindowResize);
-
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, []);
-
-  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.repeat) {
         return;
@@ -76,92 +61,66 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleTheme]);
 
-  function handleLeftPanelResizeStart(event: PointerEvent<HTMLDivElement>) {
-    startPanelResize(event, (clientX) => clientX, setLeftPanelWidth);
-  }
-
-  function handleRightPanelResizeStart(event: PointerEvent<HTMLDivElement>) {
-    startPanelResize(event, (clientX) => window.innerWidth - clientX, setRightPanelWidth);
-  }
-
-  function startPanelResize(
-    event: PointerEvent<HTMLDivElement>,
-    getNextWidth: (clientX: number) => number,
-    setPanelWidth: (width: number) => void,
-  ) {
-    event.preventDefault();
-
-    const previousCursor = document.body.style.cursor;
-    const previousUserSelect = document.body.style.userSelect;
+  const startResizingSidebar = useCallback(() => {
+    isResizingSidebar.current = true;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
+  }, []);
 
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const bounds = getSidePanelBounds();
-      const nextWidth = getNextWidth(moveEvent.clientX);
-      setPanelWidth(clamp(nextWidth, bounds.min, bounds.max));
+  const startResizingRightPanel = useCallback(() => {
+    isResizingRightPanel.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizingSidebar.current = false;
+    isResizingRightPanel.current = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizingSidebar.current) {
+      const newWidth = Math.min(Math.max(200, e.clientX), 400);
+      setSidebarWidth(newWidth);
+    } else if (isResizingRightPanel.current) {
+      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
+      setRightPanelWidth(newWidth);
     }
+  }, []);
 
-    function handlePointerUp() {
-      document.body.style.cursor = previousCursor;
-      document.body.style.userSelect = previousUserSelect;
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    }
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-  }
-
-  const layoutStyle = {
-    '--left-panel-width': `${leftPanelWidth}px`,
-    '--right-panel-width': `${rightPanelWidth}px`,
-  } as CSSProperties;
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
 
   return (
     <div
-      className="grid h-screen min-w-[1024px] grid-cols-[var(--left-panel-width)_6px_minmax(0,1fr)_6px_var(--right-panel-width)] overflow-hidden bg-app-background text-app-text"
-      style={layoutStyle}
+      className="grid h-screen min-w-[1180px] overflow-hidden bg-app-background text-app-text"
+      style={{
+        gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
+      }}
     >
-      <Sidebar />
-      <div
-        className="group flex cursor-col-resize items-stretch bg-app-background"
-        role="separator"
-        aria-label="Resize sidebar"
-        aria-orientation="vertical"
-        onPointerDown={handleLeftPanelResizeStart}
-      >
-        <div className="mx-auto w-px bg-app-border transition-colors group-hover:bg-app-accent" />
+      <div className="relative h-full overflow-hidden">
+        <Sidebar />
+        <div
+          className="absolute right-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
+          onMouseDown={startResizingSidebar}
+        />
       </div>
       <MainPanel />
-      <div
-        className="group flex cursor-col-resize items-stretch bg-app-background"
-        role="separator"
-        aria-label="Resize details panel"
-        aria-orientation="vertical"
-        onPointerDown={handleRightPanelResizeStart}
-      >
-        <div className="mx-auto w-px bg-app-border transition-colors group-hover:bg-app-accent" />
+      <div className="relative h-full overflow-hidden">
+        <div
+          className="absolute left-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
+          onMouseDown={startResizingRightPanel}
+        />
+        <RightPanel />
       </div>
-      <RightPanel />
     </div>
   );
-}
-
-function getSidePanelBounds() {
-  if (window.innerWidth >= LARGE_SCREEN_BREAKPOINT) {
-    return {
-      min: LARGE_SCREEN_SIDE_PANEL_MIN_WIDTH,
-      max: LARGE_SCREEN_SIDE_PANEL_MAX_WIDTH,
-    };
-  }
-
-  return {
-    min: SMALL_SCREEN_SIDE_PANEL_MIN_WIDTH,
-    max: SMALL_SCREEN_SIDE_PANEL_MAX_WIDTH,
-  };
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }
