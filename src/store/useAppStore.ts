@@ -1,24 +1,31 @@
 import { create } from 'zustand';
-import type { GraphIngestSummary } from '../lib/graph';
+import type { GraphContext, GraphIngestSummary, GraphViewData, GraphViewNode } from '../lib/graph';
 import type { IndexFileSummary, IndexPathSummary, IndexRunSummary } from '../lib/indexer';
 import type { FileMetadata } from '../lib/metadata';
 import type { ParsedFile } from '../lib/parser';
 import type { SearchIndexSummary, SearchResult } from '../lib/search';
+import type { ChatMessage, Citation } from '../lib/chat';
+import type { AgentApiStatus } from '../lib/api';
+import type { ProviderSettings } from '../lib/settings';
 import type { WikiSummary } from '../lib/wiki';
 
-type ActivePanel = 'chat' | 'graph';
+type ActivePanel = 'graph' | 'wiki' | 'flow';
 type Theme = 'dark' | 'light';
 
 interface AppState {
   activePanel: ActivePanel;
   appVersion: string;
   theme: Theme;
+  activeSourcePath: string;
   lastFileChange: string | null;
   lastFileChangeAt: number | null;
   parsedFile: ParsedFile | null;
   parserError: string | null;
   graphSummary: GraphIngestSummary | null;
   graphSymbols: ParsedFile['symbols'];
+  graphContext: GraphContext[];
+  graphView: GraphViewData | null;
+  selectedGraphNode: GraphViewNode | null;
   graphError: string | null;
   metadata: FileMetadata | null;
   metadataError: string | null;
@@ -32,14 +39,23 @@ interface AppState {
   searchResults: SearchResult[];
   searchQuery: string;
   searchError: string | null;
+  chatMessages: ChatMessage[];
+  chatError: string | null;
+  citations: Citation[];
+  providerSettings: ProviderSettings | null;
+  agentApiStatus: AgentApiStatus | null;
   setActivePanel: (panel: ActivePanel) => void;
   setAppVersion: (version: string) => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
+  setActiveSourcePath: (path: string) => void;
   setLastFileChange: (path: string) => void;
   setParsedFile: (parsedFile: ParsedFile) => void;
   setParserError: (error: string | null) => void;
   setGraphResult: (summary: GraphIngestSummary, symbols: ParsedFile['symbols']) => void;
+  setGraphContext: (context: GraphContext[]) => void;
+  setGraphView: (view: GraphViewData) => void;
+  setSelectedGraphNode: (node: GraphViewNode | null) => void;
   setGraphError: (error: string | null) => void;
   setMetadataResult: (metadata: FileMetadata) => void;
   setMetadataError: (error: string | null) => void;
@@ -52,18 +68,28 @@ interface AppState {
   setSearchIndexResult: (summary: SearchIndexSummary) => void;
   setSearchResults: (query: string, results: SearchResult[]) => void;
   setSearchError: (error: string | null) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  replaceChatMessage: (id: string, message: ChatMessage) => void;
+  setChatError: (error: string | null) => void;
+  setCitations: (citations: Citation[]) => void;
+  setProviderSettings: (settings: ProviderSettings) => void;
+  setAgentApiStatus: (status: AgentApiStatus) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  activePanel: 'chat',
+  activePanel: 'graph',
   appVersion: 'loading',
   theme: 'dark',
+  activeSourcePath: 'src/App.tsx',
   lastFileChange: null,
   lastFileChangeAt: null,
   parsedFile: null,
   parserError: null,
   graphSummary: null,
   graphSymbols: [],
+  graphContext: [],
+  graphView: null,
+  selectedGraphNode: null,
   graphError: null,
   metadata: null,
   metadataError: null,
@@ -77,15 +103,24 @@ export const useAppStore = create<AppState>((set) => ({
   searchResults: [],
   searchQuery: '',
   searchError: null,
+  chatMessages: [],
+  chatError: null,
+  citations: [],
+  providerSettings: null,
+  agentApiStatus: null,
   setActivePanel: (panel) => set({ activePanel: panel }),
   setAppVersion: (version) => set({ appVersion: version }),
   setTheme: (theme) => set({ theme }),
   toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+  setActiveSourcePath: (path) => set({ activeSourcePath: path }),
   setLastFileChange: (path) => set({ lastFileChange: path, lastFileChangeAt: Date.now() }),
   setParsedFile: (parsedFile) => set({ parsedFile, parserError: null }),
   setParserError: (error) => set({ parserError: error }),
   setGraphResult: (summary, symbols) =>
     set({ graphSummary: summary, graphSymbols: symbols, graphError: null }),
+  setGraphContext: (context) => set({ graphContext: context, graphError: null }),
+  setGraphView: (view) => set({ graphView: view, graphError: null }),
+  setSelectedGraphNode: (node) => set({ selectedGraphNode: node }),
   setGraphError: (error) => set({ graphError: error }),
   setMetadataResult: (metadata) => set({ metadata, metadataError: null }),
   setMetadataError: (error) => set({ metadataError: error }),
@@ -121,4 +156,13 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchResults: (query, results) =>
     set({ searchQuery: query, searchResults: results, searchError: null }),
   setSearchError: (error) => set({ searchError: error }),
+  addChatMessage: (message) => set((state) => ({ chatMessages: [...state.chatMessages, message] })),
+  replaceChatMessage: (id, message) =>
+    set((state) => ({
+      chatMessages: state.chatMessages.map((existing) => (existing.id === id ? message : existing)),
+    })),
+  setChatError: (error) => set({ chatError: error }),
+  setCitations: (citations) => set({ citations }),
+  setProviderSettings: (settings) => set({ providerSettings: settings }),
+  setAgentApiStatus: (status) => set({ agentApiStatus: status }),
 }));

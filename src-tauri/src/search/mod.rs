@@ -54,7 +54,7 @@ pub async fn rebuild_search_index(
     metadata_store: &MetadataStore,
 ) -> Result<SearchIndexSummary, SearchError> {
     let requested_path = path.as_ref();
-    let root = metadata_store.resolve_path(requested_path);
+    let root = metadata_store.resolve_path(requested_path)?;
     let normalized_root = metadata_store.normalize_path(requested_path);
     let mut summary = SearchIndexSummary {
         root: normalized_root,
@@ -83,7 +83,7 @@ pub async fn index_document(
     metadata_store: &MetadataStore,
 ) -> Result<EmbeddingSummary, SearchError> {
     let path = path.as_ref();
-    let source_path = metadata_store.resolve_path(path);
+    let source_path = metadata_store.resolve_path(path)?;
     let content = fs::read_to_string(&source_path)?;
     let normalized_path = metadata_store.normalize_path(path);
     let title = path
@@ -432,10 +432,7 @@ mod tests {
 
         assert_eq!(summary.documents_indexed, 1);
         assert_eq!(summary.embeddings_indexed, 1);
-        assert_eq!(
-            text_results[0].path,
-            temp_dir.path().join("src/App.tsx").display().to_string()
-        );
+        assert_eq!(text_results[0].path, "src/App.tsx");
         assert!(!hybrid_results.is_empty());
     }
 }

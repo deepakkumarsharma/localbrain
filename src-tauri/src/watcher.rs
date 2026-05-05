@@ -28,7 +28,9 @@ pub fn start_watcher(
     state: tauri::State<'_, WatcherState>,
     metadata_store: tauri::State<'_, MetadataStore>,
 ) -> Result<(), String> {
-    let path_to_watch = metadata_store.resolve_path(&path);
+    let path_to_watch = metadata_store
+        .resolve_path(&path)
+        .map_err(|error| error.to_string())?;
     if !path_to_watch.exists() {
         return Err(format!("Path does not exist: {}", path));
     }

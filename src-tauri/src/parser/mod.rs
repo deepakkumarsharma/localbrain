@@ -2,7 +2,9 @@ mod types;
 mod typescript;
 
 use std::fs;
-use std::path::{Component, Path};
+#[cfg(test)]
+use std::path::Component;
+use std::path::Path;
 use thiserror::Error;
 
 pub use types::{CodeSymbol, ParsedFile, SourceLanguage, SourceRange, SymbolKind};
@@ -19,16 +21,37 @@ pub enum ParserError {
     Language(#[from] tree_sitter::LanguageError),
 }
 
+#[cfg(test)]
 pub fn parse_file(path: impl AsRef<Path>) -> Result<ParsedFile, ParserError> {
     let requested_path = path.as_ref();
     let source_path = resolve_source_path(requested_path);
-    let source = fs::read_to_string(&source_path)?;
     let language = language_from_path(requested_path)?;
     let display_path = normalize_display_path(requested_path);
 
-    typescript::parse_source(&display_path, language, &source)
+    parse_source_file(&source_path, &display_path, language)
 }
 
+pub fn parse_file_with_display_path(
+    source_path: impl AsRef<Path>,
+    display_path: &str,
+) -> Result<ParsedFile, ParserError> {
+    let source_path = source_path.as_ref();
+    let language = language_from_path(source_path)?;
+
+    parse_source_file(source_path, display_path, language)
+}
+
+fn parse_source_file(
+    source_path: &Path,
+    display_path: &str,
+    language: SourceLanguage,
+) -> Result<ParsedFile, ParserError> {
+    let source = fs::read_to_string(source_path)?;
+
+    typescript::parse_source(display_path, language, &source)
+}
+
+#[cfg(test)]
 fn resolve_source_path(path: &Path) -> std::path::PathBuf {
     if path.exists() || path.is_absolute() {
         return path.to_path_buf();
@@ -54,6 +77,7 @@ fn language_from_path(path: &Path) -> Result<SourceLanguage, ParserError> {
     }
 }
 
+#[cfg(test)]
 fn normalize_display_path(path: &Path) -> String {
     if path.is_absolute() {
         if let Ok(current_dir) = std::env::current_dir() {
@@ -72,6 +96,7 @@ fn normalize_display_path(path: &Path) -> String {
     normalize_relative_path(path)
 }
 
+#[cfg(test)]
 fn normalize_relative_path(path: &Path) -> String {
     let mut parts = Vec::new();
 

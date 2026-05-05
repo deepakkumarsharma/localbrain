@@ -39,7 +39,7 @@ pub async fn generate_wiki(
     graph_store: &GraphStore,
 ) -> Result<WikiSummary, WikiError> {
     let requested_path = path.as_ref();
-    let root = metadata_store.resolve_path(requested_path);
+    let root = metadata_store.resolve_path(requested_path)?;
     let normalized_root = metadata_store.normalize_path(requested_path);
     let output_dir = wiki_output_dir(&root);
     fs::create_dir_all(&output_dir)?;

@@ -20,6 +20,38 @@ pub struct GraphIngestSummary {
     pub symbol_names: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphContext {
+    pub path: String,
+    pub relation: String,
+    pub symbol: CodeSymbol,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphViewNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphViewEdge {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphView {
+    pub nodes: Vec<GraphViewNode>,
+    pub edges: Vec<GraphViewEdge>,
+}
+
 pub struct GraphStore {
     database: Database,
 }
@@ -231,6 +263,103 @@ impl GraphStore {
         }
 
         Ok(symbols)
+    }
+
+    pub fn get_graph_context(
+        &self,
+        path_or_symbol: &str,
+        limit: usize,
+    ) -> Result<Vec<GraphContext>, GraphError> {
+        let normalized_limit = limit.max(1);
+        let mut contexts = Vec::new();
+
+        for symbol in self.get_symbols_for_file(path_or_symbol)? {
+            contexts.push(GraphContext {
+                path: path_or_symbol.to_string(),
+                relation: "contains".to_string(),
+                symbol,
+            });
+            if contexts.len() >= normalized_limit {
+                return Ok(contexts);
+            }
+        }
+
+        let conn = self.connect()?;
+        let mut query = conn.prepare(
+            "
+            MATCH (symbol:Symbol)
+            WHERE symbol.name = $name
+            RETURN
+              symbol.file_path,
+              symbol.name,
+              symbol.kind,
+              symbol.parent,
+              symbol.source,
+              symbol.start_line,
+              symbol.start_column,
+              symbol.end_line,
+              symbol.end_column
+            ORDER BY symbol.file_path, symbol.start_line
+            ",
+        )?;
+        let result = conn.execute(
+            &mut query,
+            vec![("name", path_or_symbol.to_string().into())],
+        )?;
+
+        for row in result {
+            if contexts.len() >= normalized_limit {
+                break;
+            }
+
+            contexts.push(GraphContext {
+                path: value_to_string(&row[0], "file_path")?,
+                relation: "matches_symbol".to_string(),
+                symbol: CodeSymbol {
+                    name: value_to_string(&row[1], "name")?,
+                    kind: value_to_symbol_kind(&row[2])?,
+                    parent: value_to_optional_string(&row[3], "parent")?,
+                    source: value_to_optional_string(&row[4], "source")?,
+                    range: SourceRange {
+                        start_line: value_to_usize(&row[5], "start_line")?,
+                        start_column: value_to_usize(&row[6], "start_column")?,
+                        end_line: value_to_usize(&row[7], "end_line")?,
+                        end_column: value_to_usize(&row[8], "end_column")?,
+                    },
+                },
+            });
+        }
+
+        contexts.truncate(normalized_limit);
+        Ok(contexts)
+    }
+
+    pub fn get_graph_view(&self, path: &str, limit: usize) -> Result<GraphView, GraphError> {
+        let normalized_limit = limit.max(1);
+        let symbols = self.get_symbols_for_file(path)?;
+        let mut nodes = vec![GraphViewNode {
+            id: path.to_string(),
+            label: path.to_string(),
+            kind: "file".to_string(),
+        }];
+        let mut edges = Vec::new();
+
+        for symbol in symbols.into_iter().take(normalized_limit) {
+            let symbol_node_id = format!("{}::{}::{}", path, symbol.name, symbol.range.start_line);
+            nodes.push(GraphViewNode {
+                id: symbol_node_id.clone(),
+                label: symbol.name,
+                kind: kind_label(symbol.kind).to_string(),
+            });
+            edges.push(GraphViewEdge {
+                id: format!("{path}->{symbol_node_id}"),
+                source: path.to_string(),
+                target: symbol_node_id,
+                label: "contains".to_string(),
+            });
+        }
+
+        Ok(GraphView { nodes, edges })
     }
 
     pub fn clear_file(&self, path: &str) -> Result<(), GraphError> {

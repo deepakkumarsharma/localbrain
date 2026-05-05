@@ -3,24 +3,32 @@
 @tailwind utilities;
 
 :root {
-  --color-app-background: 16 19 26;
-  --color-app-panel: 23 27 36;
-  --color-app-panel-soft: 32 38 54;
-  --color-app-border: 47 56 72;
-  --color-app-text: 232 237 245;
-  --color-app-muted: 154 167 184;
-  --color-app-accent: 155 183 255;
-  --color-app-accent-soft: 38 54 87;
+  --color-app-background: 5 5 7;
+  --color-app-panel: 12 12 15;
+  --color-app-panel-soft: 21 21 25;
+  --color-app-border: 30 30 35;
+  --color-app-text: 228 228 231;
+  --color-app-muted: 113 113 122;
+  --color-app-accent: 59 130 246;
+  --color-app-accent-soft: 29 78 216;
   --color-app-success: 125 223 179;
   --color-app-warning: 255 209 102;
   --color-app-error: 255 154 162;
+  --color-graph-feature: 62 131 255;
+  --color-graph-component: 139 92 246;
+  --color-graph-api: 16 185 129;
+  --color-graph-service: 245 158 11;
+  --color-graph-model: 239 68 68;
+  --color-graph-node-fill: 15 23 42;
+  --color-graph-node-active: 30 58 138;
+  --color-graph-edge: 62 131 255;
   font-family: 'Geist Sans', system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
-  background: #10131a;
-  color: #e8edf5;
+  background: #050507;
+  color: #e4e4e7;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -39,10 +47,25 @@
   --color-app-success: 107 207 159;
   --color-app-warning: 246 199 107;
   --color-app-error: 242 139 130;
+  --color-graph-feature: 37 99 235;
+  --color-graph-component: 124 58 237;
+  --color-graph-api: 5 150 105;
+  --color-graph-service: 217 119 6;
+  --color-graph-model: 220 38 38;
+  --color-graph-node-fill: 255 255 255;
+  --color-graph-node-active: 231 237 255;
+  --color-graph-edge: 96 128 220;
 
   color-scheme: light;
   background: #f8fafc;
   color: #1e293b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -62,18 +85,17 @@ input {
 }
 
 .app-scrollbar::-webkit-scrollbar {
-  height: 10px;
-  width: 10px;
+  height: 8px;
+  width: 8px;
 }
 
 .app-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgb(var(--color-app-panel));
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb {
   background: rgb(var(--color-app-border));
-  border: 2px solid rgb(var(--color-app-panel));
-  border-radius: 999px;
+  border-radius: 4px;
 }
 
 .app-scrollbar::-webkit-scrollbar-thumb:hover {

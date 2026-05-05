@@ -16,6 +16,7 @@ use super::types::{FileChangeStatus, FileMetadata, IndexRunSummary};
 #[derive(Clone)]
 pub struct MetadataStore {
     pool: SqlitePool,
+    workspace_root: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -28,14 +29,34 @@ pub enum MetadataError {
     InvalidStatus(String),
     #[error("failed to resolve metadata path: {0}")]
     InvalidPath(String),
+    #[error("path escapes workspace root: {0}")]
+    PathOutsideWorkspace(String),
     #[error("system clock is before unix epoch")]
     SystemClock,
 }
 
 impl MetadataStore {
+    #[cfg(test)]
     pub async fn open(root_dir: impl AsRef<Path>) -> Result<Self, MetadataError> {
         let root_dir = root_dir.as_ref().to_path_buf();
+        let workspace_root = if root_dir.file_name().is_some_and(|name| name == "metadata") {
+            root_dir
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| root_dir.clone())
+        } else {
+            root_dir.clone()
+        };
+        Self::open_with_workspace_root(&root_dir, workspace_root).await
+    }
+
+    pub async fn open_with_workspace_root(
+        root_dir: impl AsRef<Path>,
+        workspace_root: impl AsRef<Path>,
+    ) -> Result<Self, MetadataError> {
+        let root_dir = root_dir.as_ref().to_path_buf();
         fs::create_dir_all(&root_dir)?;
+        let workspace_root = canonicalize_existing_dir(workspace_root.as_ref())?;
         let db_path = root_dir.join("metadata.db");
         let options = SqliteConnectOptions::new()
             .filename(db_path)
@@ -45,7 +66,10 @@ impl MetadataStore {
             .max_connections(5)
             .connect_with(options)
             .await?;
-        let store = Self { pool };
+        let store = Self {
+            pool,
+            workspace_root,
+        };
         store.init_schema().await?;
 
         Ok(store)
@@ -61,7 +85,11 @@ impl MetadataStore {
             .app_data_dir()
             .map_err(|_| MetadataError::InvalidPath("app_data_dir".to_string()))?;
 
-        Self::open(app_data_dir.join(".localbrain").join("metadata")).await
+        Self::open_with_workspace_root(
+            app_data_dir.join(".localbrain").join("metadata"),
+            project_root(),
+        )
+        .await
     }
 
     pub async fn init_schema(&self) -> Result<(), MetadataError> {
@@ -79,23 +107,26 @@ impl MetadataStore {
         Ok(())
     }
 
-    pub fn resolve_path(&self, path: impl AsRef<Path>) -> PathBuf {
+    pub fn resolve_path(&self, path: impl AsRef<Path>) -> Result<PathBuf, MetadataError> {
         let path = path.as_ref();
-        if path.is_absolute() {
-            return path.to_path_buf();
+        let candidate = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.workspace_root.join(path)
+        };
+        let resolved = canonicalize_for_workspace_check(&candidate)?;
+
+        if resolved == self.workspace_root || resolved.starts_with(&self.workspace_root) {
+            return Ok(resolved);
         }
 
-        let root = project_root();
-        let project_candidate = root.join(path);
-        if project_candidate.exists() {
-            return project_candidate;
-        }
-
-        path.to_path_buf()
+        Err(MetadataError::PathOutsideWorkspace(
+            path.to_string_lossy().to_string(),
+        ))
     }
 
     pub fn normalize_path(&self, path: impl AsRef<Path>) -> String {
-        normalize_display_path(path.as_ref())
+        normalize_display_path(path.as_ref(), &self.workspace_root)
     }
 
     pub(crate) fn pool(&self) -> &SqlitePool {
@@ -104,7 +135,7 @@ impl MetadataStore {
 
     pub async fn scan_file(&self, path: impl AsRef<Path>) -> Result<FileMetadata, MetadataError> {
         let requested_path = path.as_ref();
-        let source_path = self.resolve_path(requested_path);
+        let source_path = self.resolve_path(requested_path)?;
         let bytes = fs::read(&source_path)?;
         let metadata = fs::metadata(&source_path)?;
         let modified_at = metadata.modified().ok().map(timestamp_from_system_time);
@@ -113,7 +144,7 @@ impl MetadataStore {
         let content_hash = format!("{:x}", hasher.finalize());
 
         Ok(FileMetadata {
-            path: normalize_display_path(requested_path),
+            path: self.normalize_path(requested_path),
             language: language_from_path(requested_path).map(str::to_string),
             size_bytes: i64::try_from(bytes.len()).unwrap_or(i64::MAX),
             modified_at,
@@ -179,9 +210,9 @@ impl MetadataStore {
         path: impl AsRef<Path>,
     ) -> Result<FileChangeStatus, MetadataError> {
         let requested_path = path.as_ref();
-        let normalized_path = normalize_display_path(requested_path);
+        let normalized_path = self.normalize_path(requested_path);
 
-        if !self.resolve_path(requested_path).exists() {
+        if !self.resolve_path(requested_path)?.exists() {
             return match self.get_file(&normalized_path).await? {
                 Some(_) => Ok(FileChangeStatus::Deleted),
                 None => Ok(FileChangeStatus::Error),
@@ -205,7 +236,7 @@ impl MetadataStore {
     ) -> Result<FileMetadata, MetadataError> {
         let path_ref = path.as_ref();
         let status = self.classify_file(path_ref).await?;
-        let normalized_path = normalize_display_path(path_ref);
+        let normalized_path = self.normalize_path(path_ref);
 
         if status == FileChangeStatus::Deleted {
             let existing = self.get_file(&normalized_path).await?;
@@ -243,7 +274,7 @@ impl MetadataStore {
         let status = self.classify_file(path_ref).await?;
 
         if status == FileChangeStatus::Deleted {
-            let normalized_path = normalize_display_path(path_ref);
+            let normalized_path = self.normalize_path(path_ref);
             let existing = self.get_file(&normalized_path).await?;
             let metadata = FileMetadata {
                 path: normalized_path,
@@ -420,10 +451,34 @@ fn project_root() -> PathBuf {
     current_dir
 }
 
-fn normalize_display_path(path: &Path) -> String {
+fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, MetadataError> {
+    if path.exists() {
+        return Ok(path.canonicalize()?);
+    }
+
+    fs::create_dir_all(path)?;
+    Ok(path.canonicalize()?)
+}
+
+fn canonicalize_for_workspace_check(path: &Path) -> Result<PathBuf, MetadataError> {
+    if path.exists() {
+        return Ok(path.canonicalize()?);
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| MetadataError::InvalidPath(path.to_string_lossy().to_string()))?;
+    let canonical_parent = parent.canonicalize()?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| MetadataError::InvalidPath(path.to_string_lossy().to_string()))?;
+
+    Ok(canonical_parent.join(file_name))
+}
+
+fn normalize_display_path(path: &Path, workspace_root: &Path) -> String {
     if path.is_absolute() {
-        let root = project_root();
-        if let Ok(relative) = path.strip_prefix(&root) {
+        if let Ok(relative) = path.strip_prefix(workspace_root) {
             return normalize_relative_path(relative);
         } else {
             return path.to_string_lossy().to_string();
@@ -511,6 +566,28 @@ mod tests {
             .expect("file should scan again");
 
         assert_ne!(first.content_hash, second.content_hash);
+    }
+
+    #[tokio::test]
+    async fn rejects_paths_outside_workspace_root() {
+        let workspace_dir = tempfile::tempdir().expect("workspace dir should be created");
+        let outside_dir = tempfile::tempdir().expect("outside dir should be created");
+        let outside_path = outside_dir.path().join("secret.ts");
+        fs::write(&outside_path, "export const secret = true;")
+            .expect("outside file should be written");
+        let store = MetadataStore::open_with_workspace_root(
+            workspace_dir.path().join("metadata"),
+            workspace_dir.path(),
+        )
+        .await
+        .expect("metadata store should open");
+
+        let error = store
+            .scan_file(&outside_path)
+            .await
+            .expect_err("outside path should be rejected");
+
+        assert!(error.to_string().contains("escapes workspace root"));
     }
 
     #[tokio::test]
