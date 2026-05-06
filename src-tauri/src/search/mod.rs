@@ -13,6 +13,8 @@ use crate::metadata::{current_timestamp, MetadataError, MetadataStore};
 const DEFAULT_SEARCH_SCAN_LIMIT: usize = 2_000;
 const MAX_SEARCH_SCAN_LIMIT: usize = 10_000;
 const SEARCH_SCAN_MULTIPLIER: usize = 50;
+const CHUNK_TARGET_LINES: usize = 80;
+const CHUNK_OVERLAP_LINES: usize = 12;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -27,12 +29,32 @@ pub struct SearchIndexSummary {
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub path: String,
+    pub chunk_id: Option<String>,
     pub kind: String,
     pub title: String,
     pub snippet: String,
+    pub start_line: Option<usize>,
+    pub end_line: Option<usize>,
     pub text_score: f32,
     pub vector_score: f32,
     pub score: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchChunk {
+    id: String,
+    title: String,
+    content: String,
+    start_line: usize,
+    end_line: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexedDocument {
+    pub path: String,
+    pub kind: String,
+    pub title: String,
 }
 
 #[derive(Debug, Error)]
@@ -78,6 +100,50 @@ pub async fn rebuild_search_index(
     Ok(summary)
 }
 
+pub async fn clear_search_index(metadata_store: &MetadataStore) -> Result<(), SearchError> {
+    sqlx::query("DELETE FROM chunk_embeddings")
+        .execute(metadata_store.pool())
+        .await?;
+    sqlx::query("DELETE FROM embeddings")
+        .execute(metadata_store.pool())
+        .await?;
+    sqlx::query("DELETE FROM search_chunks")
+        .execute(metadata_store.pool())
+        .await?;
+    sqlx::query("DELETE FROM search_documents")
+        .execute(metadata_store.pool())
+        .await?;
+    Ok(())
+}
+
+pub async fn indexed_documents(
+    metadata_store: &MetadataStore,
+    limit: usize,
+) -> Result<Vec<IndexedDocument>, SearchError> {
+    let rows = sqlx::query(
+        "
+        SELECT path, kind, title
+        FROM search_documents
+        ORDER BY path
+        LIMIT ?
+        ",
+    )
+    .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+    .fetch_all(metadata_store.pool())
+    .await?;
+
+    let mut documents = Vec::new();
+    for row in rows {
+        documents.push(IndexedDocument {
+            path: row.try_get("path")?,
+            kind: row.try_get("kind")?,
+            title: row.try_get("title")?,
+        });
+    }
+
+    Ok(documents)
+}
+
 pub async fn index_document(
     path: impl AsRef<Path>,
     metadata_store: &MetadataStore,
@@ -94,6 +160,7 @@ pub async fn index_document(
     let kind = document_kind(path);
     let updated_at = current_timestamp()?;
     let vector = embed_text(&format!("{title}\n{content}"));
+    let chunks = chunk_content(&title, &content);
 
     metadata_store.record_file_metadata(path).await?;
     upsert_search_document(
@@ -106,6 +173,7 @@ pub async fn index_document(
     )
     .await?;
     upsert_embedding(metadata_store, &normalized_path, &vector, &updated_at).await?;
+    replace_search_chunks(metadata_store, &normalized_path, kind, &chunks, &updated_at).await?;
 
     Ok(EmbeddingSummary {
         path: normalized_path,
@@ -121,8 +189,8 @@ pub async fn search_text(
 ) -> Result<Vec<SearchResult>, SearchError> {
     let rows = sqlx::query(
         "
-        SELECT path, kind, title, content
-        FROM search_documents
+        SELECT path, chunk_id, kind, title, content, start_line, end_line
+        FROM search_chunks
         ORDER BY updated_at DESC
         LIMIT ?
         ",
@@ -136,18 +204,24 @@ pub async fn search_text(
 
     for row in rows {
         let path: String = row.try_get("path")?;
+        let chunk_id: String = row.try_get("chunk_id")?;
         let kind: String = row.try_get("kind")?;
         let title: String = row.try_get("title")?;
         let content: String = row.try_get("content")?;
+        let start_line = row.try_get::<i64, _>("start_line")?;
+        let end_line = row.try_get::<i64, _>("end_line")?;
         let haystack = format!("{title}\n{content}").to_lowercase();
         let text_score = score_text(&haystack, &query_terms);
 
         if text_score > 0.0 {
             results.push(SearchResult {
                 path,
+                chunk_id: Some(chunk_id),
                 kind,
                 title,
                 snippet: snippet(&content, &query_terms),
+                start_line: Some(i64_to_usize(start_line)),
+                end_line: Some(i64_to_usize(end_line)),
                 text_score,
                 vector_score: 0.0,
                 score: text_score,
@@ -167,10 +241,10 @@ pub async fn hybrid_search(
 ) -> Result<Vec<SearchResult>, SearchError> {
     let rows = sqlx::query(
         "
-        SELECT d.path, d.kind, d.title, d.content, e.vector_json
-        FROM search_documents d
-        LEFT JOIN embeddings e ON e.path = d.path
-        ORDER BY d.updated_at DESC
+        SELECT c.path, c.chunk_id, c.kind, c.title, c.content, c.start_line, c.end_line, e.vector_json
+        FROM search_chunks c
+        LEFT JOIN chunk_embeddings e ON e.path = c.path AND e.chunk_id = c.chunk_id
+        ORDER BY c.updated_at DESC
         LIMIT ?
         ",
     )
@@ -184,9 +258,12 @@ pub async fn hybrid_search(
 
     for row in rows {
         let path: String = row.try_get("path")?;
+        let chunk_id: String = row.try_get("chunk_id")?;
         let kind: String = row.try_get("kind")?;
         let title: String = row.try_get("title")?;
         let content: String = row.try_get("content")?;
+        let start_line = row.try_get::<i64, _>("start_line")?;
+        let end_line = row.try_get::<i64, _>("end_line")?;
         let vector_json: Option<String> = row.try_get("vector_json")?;
         let haystack = format!("{title}\n{content}").to_lowercase();
         let text_score = score_text(&haystack, &query_terms);
@@ -203,9 +280,12 @@ pub async fn hybrid_search(
         if score > 0.0 {
             results.push(SearchResult {
                 path,
+                chunk_id: Some(chunk_id),
                 kind,
                 title,
                 snippet: snippet(&content, &query_terms),
+                start_line: Some(i64_to_usize(start_line)),
+                end_line: Some(i64_to_usize(end_line)),
                 text_score,
                 vector_score,
                 score,
@@ -214,6 +294,56 @@ pub async fn hybrid_search(
     }
 
     results.sort_by(sort_by_score);
+    results.truncate(limit);
+    Ok(results)
+}
+
+pub async fn project_overview_chunks(
+    metadata_store: &MetadataStore,
+    limit: usize,
+) -> Result<Vec<SearchResult>, SearchError> {
+    let rows = sqlx::query(
+        "
+        SELECT path, chunk_id, kind, title, content, start_line, end_line
+        FROM search_chunks
+        ORDER BY path, start_line
+        LIMIT ?
+        ",
+    )
+    .bind(scan_limit_for(limit))
+    .fetch_all(metadata_store.pool())
+    .await?;
+
+    let mut results = Vec::new();
+
+    for row in rows {
+        let path: String = row.try_get("path")?;
+        let chunk_id: String = row.try_get("chunk_id")?;
+        let kind: String = row.try_get("kind")?;
+        let title: String = row.try_get("title")?;
+        let content: String = row.try_get("content")?;
+        let start_line = row.try_get::<i64, _>("start_line")?;
+        let end_line = row.try_get::<i64, _>("end_line")?;
+        let priority = overview_priority(&path, &chunk_id, i64_to_usize(start_line), &content);
+
+        if priority > 0.0 {
+            results.push(SearchResult {
+                path,
+                chunk_id: Some(chunk_id),
+                kind,
+                title,
+                snippet: context_snippet(&content),
+                start_line: Some(i64_to_usize(start_line)),
+                end_line: Some(i64_to_usize(end_line)),
+                text_score: priority,
+                vector_score: 0.0,
+                score: priority,
+            });
+        }
+    }
+
+    results.sort_by(sort_by_score);
+    dedupe_results_by_path(&mut results);
     results.truncate(limit);
     Ok(results)
 }
@@ -247,9 +377,12 @@ pub async fn document_for_path(
 
     Ok(Some(SearchResult {
         path,
+        chunk_id: None,
         kind,
         title,
         snippet: snippet(&content, &terms),
+        start_line: None,
+        end_line: None,
         text_score: 1.0,
         vector_score: 1.0,
         score: 1.0,
@@ -316,6 +449,147 @@ async fn upsert_embedding(
     Ok(())
 }
 
+async fn replace_search_chunks(
+    metadata_store: &MetadataStore,
+    path: &str,
+    kind: &str,
+    chunks: &[SearchChunk],
+    updated_at: &str,
+) -> Result<(), SearchError> {
+    sqlx::query("DELETE FROM chunk_embeddings WHERE path = ?")
+        .bind(path)
+        .execute(metadata_store.pool())
+        .await?;
+    sqlx::query("DELETE FROM search_chunks WHERE path = ?")
+        .bind(path)
+        .execute(metadata_store.pool())
+        .await?;
+
+    for chunk in chunks {
+        sqlx::query(
+            "
+            INSERT INTO search_chunks (
+              path,
+              chunk_id,
+              kind,
+              title,
+              content,
+              start_line,
+              end_line,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ",
+        )
+        .bind(path)
+        .bind(&chunk.id)
+        .bind(kind)
+        .bind(&chunk.title)
+        .bind(&chunk.content)
+        .bind(usize_to_i64(chunk.start_line))
+        .bind(usize_to_i64(chunk.end_line))
+        .bind(updated_at)
+        .execute(metadata_store.pool())
+        .await?;
+
+        upsert_chunk_embedding(metadata_store, path, chunk, updated_at).await?;
+    }
+
+    Ok(())
+}
+
+async fn upsert_chunk_embedding(
+    metadata_store: &MetadataStore,
+    path: &str,
+    chunk: &SearchChunk,
+    updated_at: &str,
+) -> Result<(), SearchError> {
+    let vector = embed_text(&format!("{}\n{}", chunk.title, chunk.content));
+    let vector_json = serde_json::to_string(&vector).map_err(|_| SearchError::InvalidVector {
+        path: path.to_string(),
+    })?;
+
+    sqlx::query(
+        "
+        INSERT INTO chunk_embeddings (path, chunk_id, dimensions, vector_json, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(path, chunk_id) DO UPDATE SET
+          dimensions = excluded.dimensions,
+          vector_json = excluded.vector_json,
+          updated_at = excluded.updated_at
+        ",
+    )
+    .bind(path)
+    .bind(&chunk.id)
+    .bind(i64::try_from(vector.len()).unwrap_or(i64::MAX))
+    .bind(vector_json)
+    .bind(updated_at)
+    .execute(metadata_store.pool())
+    .await?;
+
+    Ok(())
+}
+
+fn chunk_content(title: &str, content: &str) -> Vec<SearchChunk> {
+    let lines = content.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return vec![SearchChunk {
+            id: "chunk-0001".to_string(),
+            title: format!("{title}:L1-L1"),
+            content: String::new(),
+            start_line: 1,
+            end_line: 1,
+        }];
+    }
+
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+
+    while start < lines.len() {
+        let mut end = (start + CHUNK_TARGET_LINES).min(lines.len());
+        if end < lines.len() {
+            end = prefer_boundary(&lines, start, end);
+        }
+
+        let start_line = start + 1;
+        let end_line = end.max(start + 1);
+        let content = lines[start..end_line].join("\n");
+        let id = format!("chunk-{start_line:04}-{end_line:04}");
+        chunks.push(SearchChunk {
+            id,
+            title: format!("{title}:L{start_line}-L{end_line}"),
+            content,
+            start_line,
+            end_line,
+        });
+
+        if end_line >= lines.len() {
+            break;
+        }
+        start = end_line.saturating_sub(CHUNK_OVERLAP_LINES).max(start + 1);
+    }
+
+    chunks
+}
+
+fn prefer_boundary(lines: &[&str], start: usize, fallback_end: usize) -> usize {
+    let min_end = (start + CHUNK_TARGET_LINES / 2).min(fallback_end);
+    for index in (min_end..fallback_end).rev() {
+        let line = lines[index].trim_start();
+        if line.is_empty()
+            || line.starts_with("def ")
+            || line.starts_with("class ")
+            || line.starts_with("function ")
+            || line.starts_with("export ")
+            || line.starts_with("pub ")
+            || line.starts_with("fn ")
+        {
+            return index.max(start + 1);
+        }
+    }
+    fallback_end
+}
+
 fn searchable_paths(root: &Path) -> Result<Vec<PathBuf>, SearchError> {
     let mut paths = Vec::new();
 
@@ -352,7 +626,8 @@ fn document_kind(path: &Path) -> &'static str {
 }
 
 fn is_searchable_file(path: &Path) -> bool {
-    path.extension()
+    let has_supported_extension = path
+        .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
             matches!(
@@ -387,6 +662,30 @@ fn is_searchable_file(path: &Path) -> bool {
                     | "sh"
                     | "md"
                     | "txt"
+            )
+        });
+
+    has_supported_extension || is_extensionless_searchable_file(path)
+}
+
+fn is_extensionless_searchable_file(path: &Path) -> bool {
+    path.extension().is_none()
+        && path.file_name().is_some_and(|name| {
+            matches!(
+                name.to_string_lossy().as_ref(),
+                "Dockerfile"
+                    | "dockerfile"
+                    | "Containerfile"
+                    | "Makefile"
+                    | "makefile"
+                    | "justfile"
+                    | "Procfile"
+                    | "Brewfile"
+                    | "Vagrantfile"
+                    | "Jenkinsfile"
+                    | "Tiltfile"
+                    | "README"
+                    | "LICENSE"
             )
         })
 }
@@ -443,12 +742,92 @@ fn snippet(content: &str, terms: &[String]) -> String {
     content[start..end].replace('\n', " ").trim().to_string()
 }
 
+fn context_snippet(content: &str) -> String {
+    const MAX_CHARS: usize = 1_200;
+
+    content
+        .chars()
+        .take(MAX_CHARS)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+fn overview_priority(path: &str, chunk_id: &str, start_line: usize, content: &str) -> f32 {
+    let path = path.to_lowercase();
+    let file_name = path.rsplit('/').next().unwrap_or(path.as_str());
+    let content = content.to_lowercase();
+    let mut score = 0.0;
+
+    if matches!(
+        file_name,
+        "readme.md"
+            | "package.json"
+            | "cargo.toml"
+            | "tauri.conf.json"
+            | "pyproject.toml"
+            | "requirements.txt"
+            | "dockerfile"
+    ) {
+        score += 1.0;
+    }
+    if matches!(
+        file_name,
+        "main.rs" | "main.ts" | "main.tsx" | "app.tsx" | "app.ts" | "mod.rs" | "__init__.py"
+    ) {
+        score += 0.75;
+    }
+    if path.contains("/src/")
+        || path.starts_with("src/")
+        || path.contains("/src-tauri/")
+        || path.starts_with("src-tauri/")
+    {
+        score += 0.25;
+    }
+    if path.contains("indexer")
+        || path.contains("search")
+        || path.contains("llm")
+        || path.contains("parser")
+        || path.contains("commands")
+        || path.contains("api")
+    {
+        score += 0.55;
+    }
+    if content.contains("tauri")
+        || content.contains("react")
+        || content.contains("index")
+        || content.contains("search")
+        || content.contains("parse")
+        || content.contains("local brain")
+    {
+        score += 0.35;
+    }
+    if start_line == 1 || chunk_id.ends_with("-0080") {
+        score += 0.25;
+    }
+
+    score
+}
+
+fn dedupe_results_by_path(results: &mut Vec<SearchResult>) {
+    let mut seen = std::collections::HashSet::new();
+    results.retain(|result| seen.insert(result.path.clone()));
+}
+
 fn sort_by_score(left: &SearchResult, right: &SearchResult) -> Ordering {
     right
         .score
         .partial_cmp(&left.score)
         .unwrap_or(Ordering::Equal)
         .then_with(|| left.path.cmp(&right.path))
+}
+
+fn usize_to_i64(value: usize) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+fn i64_to_usize(value: i64) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
 }
 
 fn scan_limit_for(result_limit: usize) -> i64 {
@@ -475,7 +854,7 @@ fn next_char_boundary(value: &str, mut index: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{hybrid_search, rebuild_search_index, search_text};
+    use super::{hybrid_search, project_overview_chunks, rebuild_search_index, search_text};
     use crate::metadata::MetadataStore;
     use std::fs;
 
@@ -505,6 +884,49 @@ mod tests {
         assert_eq!(summary.documents_indexed, 1);
         assert_eq!(summary.embeddings_indexed, 1);
         assert_eq!(text_results[0].path, "src/App.tsx");
+        assert!(text_results[0].chunk_id.is_some());
+        assert_eq!(text_results[0].start_line, Some(1));
         assert!(!hybrid_results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn project_overview_prefers_project_spine_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        fs::create_dir_all(temp_dir.path().join("src-tauri/src/llm"))
+            .expect("src-tauri dir should be created");
+        fs::create_dir_all(temp_dir.path().join("notes")).expect("notes dir should be created");
+        fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name":"localbrain","scripts":{"dev":"vite"}}"#,
+        )
+        .expect("package should be written");
+        fs::write(
+            temp_dir.path().join("src-tauri/src/llm/mod.rs"),
+            "pub async fn ask_local() { /* local brain search answer generation */ }",
+        )
+        .expect("llm source should be written");
+        fs::write(
+            temp_dir.path().join("notes/random.txt"),
+            "small unrelated note",
+        )
+        .expect("note should be written");
+        let store = MetadataStore::open(temp_dir.path().join("metadata"))
+            .await
+            .expect("store should open");
+
+        rebuild_search_index(temp_dir.path(), &store)
+            .await
+            .expect("search index should rebuild");
+        let overview = project_overview_chunks(&store, 4)
+            .await
+            .expect("overview search should run");
+
+        assert!(overview.iter().any(|result| result.path == "package.json"));
+        assert!(overview
+            .iter()
+            .any(|result| result.path == "src-tauri/src/llm/mod.rs"));
+        assert!(overview
+            .iter()
+            .all(|result| result.snippet.chars().count() <= 1_200));
     }
 }

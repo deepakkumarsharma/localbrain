@@ -11,9 +11,12 @@ export interface SearchIndexSummary {
 
 export interface SearchResult {
   path: string;
+  chunkId: string | null;
   kind: string;
   title: string;
   snippet: string;
+  startLine: number | null;
+  endLine: number | null;
   textScore: number;
   vectorScore: number;
   score: number;
@@ -21,6 +24,10 @@ export interface SearchResult {
 
 export async function rebuildSearchIndex(path: string) {
   return invoke<SearchIndexSummary>('rebuild_search_index', { path });
+}
+
+export async function clearSearchIndex() {
+  return invoke<void>('clear_search_index');
 }
 
 export async function searchCode(query: string, limit = 10) {

@@ -45,6 +45,9 @@ interface AppState {
   providerSettings: ProviderSettings | null;
   agentApiStatus: AgentApiStatus | null;
   llmRunning: boolean;
+  projectPath: string | null;
+  isProjectLoading: boolean;
+  projectStatus: string | null;
   setActivePanel: (panel: ActivePanel) => void;
   setAppVersion: (version: string) => void;
   setTheme: (theme: Theme) => void;
@@ -76,12 +79,15 @@ interface AppState {
   setProviderSettings: (settings: ProviderSettings) => void;
   setAgentApiStatus: (status: AgentApiStatus) => void;
   setLlmRunning: (running: boolean) => void;
+  setProjectPath: (path: string | null) => void;
+  setProjectLoading: (loading: boolean, status?: string | null) => void;
+  clearProjectData: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   activePanel: 'graph',
   appVersion: 'loading',
-  theme: 'light',
+  theme: 'dark',
   activeSourcePath: '',
   lastFileChange: null,
   lastFileChangeAt: null,
@@ -111,6 +117,9 @@ export const useAppStore = create<AppState>((set) => ({
   providerSettings: null,
   agentApiStatus: null,
   llmRunning: false,
+  projectPath: null,
+  isProjectLoading: false,
+  projectStatus: null,
   setActivePanel: (panel) => set({ activePanel: panel }),
   setAppVersion: (version) => set({ appVersion: version }),
   setTheme: (theme) => set({ theme }),
@@ -170,4 +179,36 @@ export const useAppStore = create<AppState>((set) => ({
   setProviderSettings: (settings) => set({ providerSettings: settings }),
   setAgentApiStatus: (status) => set({ agentApiStatus: status }),
   setLlmRunning: (running) => set({ llmRunning: running }),
+  setProjectPath: (path) => set({ projectPath: path }),
+  setProjectLoading: (loading, status = null) =>
+    set({ isProjectLoading: loading, projectStatus: status }),
+  clearProjectData: () =>
+    set({
+      activeSourcePath: '',
+      parsedFile: null,
+      parserError: null,
+      graphSummary: null,
+      graphSymbols: [],
+      graphContext: [],
+      graphView: null,
+      selectedGraphNode: null,
+      graphError: null,
+      metadata: null,
+      metadataError: null,
+      indexFileSummary: null,
+      indexPathSummary: null,
+      indexRun: null,
+      indexError: null,
+      wikiSummary: null,
+      wikiError: null,
+      searchIndexSummary: null,
+      searchResults: [],
+      searchQuery: '',
+      searchError: null,
+      citations: [],
+      chatMessages: [],
+      chatError: null,
+      lastFileChange: '',
+      lastFileChangeAt: null,
+    }),
 }));

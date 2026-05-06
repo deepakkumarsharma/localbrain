@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -8,15 +9,15 @@ use sqlx::{Row, SqlitePool};
 use thiserror::Error;
 
 use super::schema::{
-    CREATE_EMBEDDINGS_TABLE, CREATE_FILES_TABLE, CREATE_INDEX_RUNS_TABLE,
-    CREATE_SEARCH_DOCUMENTS_TABLE,
+    CREATE_CHUNK_EMBEDDINGS_TABLE, CREATE_EMBEDDINGS_TABLE, CREATE_FILES_TABLE,
+    CREATE_INDEX_RUNS_TABLE, CREATE_SEARCH_CHUNKS_TABLE, CREATE_SEARCH_DOCUMENTS_TABLE,
 };
 use super::types::{FileChangeStatus, FileMetadata, IndexRunSummary};
 
 #[derive(Clone)]
 pub struct MetadataStore {
     pool: SqlitePool,
-    workspace_root: PathBuf,
+    workspace_root: Arc<RwLock<PathBuf>>,
 }
 
 #[derive(Debug, Error)]
@@ -68,7 +69,7 @@ impl MetadataStore {
             .await?;
         let store = Self {
             pool,
-            workspace_root,
+            workspace_root: Arc::new(RwLock::new(workspace_root)),
         };
         store.init_schema().await?;
 
@@ -100,7 +101,13 @@ impl MetadataStore {
         sqlx::query(CREATE_SEARCH_DOCUMENTS_TABLE)
             .execute(&self.pool)
             .await?;
+        sqlx::query(CREATE_SEARCH_CHUNKS_TABLE)
+            .execute(&self.pool)
+            .await?;
         sqlx::query(CREATE_EMBEDDINGS_TABLE)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(CREATE_CHUNK_EMBEDDINGS_TABLE)
             .execute(&self.pool)
             .await?;
 
@@ -109,14 +116,19 @@ impl MetadataStore {
 
     pub fn resolve_path(&self, path: impl AsRef<Path>) -> Result<PathBuf, MetadataError> {
         let path = path.as_ref();
+        let workspace_root = self
+            .workspace_root
+            .read()
+            .map_err(|_| MetadataError::InvalidPath("workspace_root_lock".to_string()))?
+            .clone();
         let candidate = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            self.workspace_root.join(path)
+            workspace_root.join(path)
         };
         let resolved = canonicalize_for_workspace_check(&candidate)?;
 
-        if resolved == self.workspace_root || resolved.starts_with(&self.workspace_root) {
+        if resolved == workspace_root || resolved.starts_with(&workspace_root) {
             return Ok(resolved);
         }
 
@@ -126,7 +138,23 @@ impl MetadataStore {
     }
 
     pub fn normalize_path(&self, path: impl AsRef<Path>) -> String {
-        normalize_display_path(path.as_ref(), &self.workspace_root)
+        let workspace_root = self
+            .workspace_root
+            .read()
+            .ok()
+            .map(|root| root.clone())
+            .unwrap_or_else(project_root);
+        normalize_display_path(path.as_ref(), &workspace_root)
+    }
+
+    pub fn set_workspace_root(&self, path: impl AsRef<Path>) -> Result<String, MetadataError> {
+        let canonical = canonicalize_existing_dir(path.as_ref())?;
+        let mut root = self
+            .workspace_root
+            .write()
+            .map_err(|_| MetadataError::InvalidPath("workspace_root_lock".to_string()))?;
+        *root = canonical.clone();
+        Ok(canonical.to_string_lossy().to_string())
     }
 
     pub(crate) fn pool(&self) -> &SqlitePool {
@@ -431,10 +459,34 @@ fn timestamp_from_system_time(time: SystemTime) -> String {
 
 fn language_from_path(path: &Path) -> Option<&'static str> {
     match path.extension().and_then(|extension| extension.to_str()) {
-        Some("js") => Some("javascript"),
+        Some("js") | Some("mjs") | Some("cjs") => Some("javascript"),
         Some("jsx") => Some("jsx"),
-        Some("ts") => Some("typescript"),
+        Some("ts") | Some("mts") | Some("cts") => Some("typescript"),
         Some("tsx") => Some("tsx"),
+        Some("rs") => Some("rust"),
+        Some("go") => Some("go"),
+        Some("py") => Some("python"),
+        Some("java") => Some("java"),
+        Some("kt") | Some("kts") => Some("kotlin"),
+        Some("swift") => Some("swift"),
+        Some("rb") => Some("ruby"),
+        Some("php") => Some("php"),
+        Some("c") | Some("h") => Some("c"),
+        Some("cpp") | Some("hpp") => Some("cpp"),
+        Some("cs") => Some("csharp"),
+        Some("sh") | Some("bash") | Some("zsh") | Some("fish") => Some("shell"),
+        Some("sql") => Some("sql"),
+        Some("json") | Some("jsonc") => Some("json"),
+        Some("yaml") | Some("yml") => Some("yaml"),
+        Some("toml") => Some("toml"),
+        Some("ini") | Some("cfg") | Some("conf") => Some("ini"),
+        Some("xml") => Some("xml"),
+        Some("css") => Some("css"),
+        Some("scss") => Some("scss"),
+        Some("less") => Some("less"),
+        Some("vue") => Some("vue"),
+        Some("svelte") => Some("svelte"),
+        Some("astro") => Some("astro"),
         _ => None,
     }
 }

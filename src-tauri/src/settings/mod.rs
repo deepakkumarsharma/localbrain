@@ -1,4 +1,4 @@
-pub mod persistence;
+mod persistence;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -56,25 +56,27 @@ impl SettingsStore {
         provider: LlmProvider,
         cloud_enabled: bool,
     ) -> Result<ProviderSettings, String> {
-        let mut cloned = self.get()?;
-        cloned.provider = provider;
-        cloned.cloud_enabled = cloud_enabled && provider != LlmProvider::Local;
-        persistence::save_settings(app, &cloned)?;
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
-        *settings = cloned.clone();
-        Ok(cloned)
+        settings.provider = provider;
+        settings.cloud_enabled = cloud_enabled && provider != LlmProvider::Local;
+        let updated = settings.clone();
+        drop(settings);
+        persistence::save_settings(app, &updated)?;
+
+        Ok(updated)
     }
 
     pub fn set_local_model_path(
         &self,
         app: &AppHandle,
-        path: Option<String>,
+        local_model_path: Option<String>,
     ) -> Result<ProviderSettings, String> {
-        let mut cloned = self.get()?;
-        cloned.local_model_path = path;
-        persistence::save_settings(app, &cloned)?;
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
-        *settings = cloned.clone();
-        Ok(cloned)
+        settings.local_model_path = local_model_path;
+        let updated = settings.clone();
+        drop(settings);
+        persistence::save_settings(app, &updated)?;
+
+        Ok(updated)
     }
 }

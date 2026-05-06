@@ -38,6 +38,14 @@ export async function indexPath(path: string) {
   return invoke<IndexPathSummary>('index_path', { path });
 }
 
+export async function setWorkspaceRoot(path: string) {
+  return invoke<string>('set_workspace_root', { path });
+}
+
+export async function resolveProjectRoot(path: string) {
+  return invoke<string>('resolve_project_root', { path });
+}
+
 export async function getIndexStatus() {
   return invoke<IndexRunSummary | null>('get_index_status');
 }

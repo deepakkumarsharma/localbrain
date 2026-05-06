@@ -5,6 +5,8 @@ export interface Citation {
   path: string;
   title: string;
   snippet: string;
+  startLine: number | null;
+  endLine: number | null;
   score: number;
 }
 

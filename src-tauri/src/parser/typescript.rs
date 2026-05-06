@@ -32,6 +32,7 @@ fn set_parser_language(
             parser.set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
         }
         SourceLanguage::Tsx => parser.set_language(&tree_sitter_typescript::LANGUAGE_TSX.into()),
+        _ => Ok(()),
     }
 }
 

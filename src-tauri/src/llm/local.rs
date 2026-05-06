@@ -1,6 +1,7 @@
 use crate::settings::SettingsStore;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -76,14 +77,15 @@ async fn is_server_alive(port: u16) -> bool {
         Err(_) => return false,
     };
 
-    match client
-        .get(format!("http://127.0.0.1:{}/health", port))
-        .send()
-        .await
-    {
-        Ok(resp) => resp.status().is_success(),
-        Err(_) => false,
+    for endpoint in ["/health", "/v1/models"] {
+        let url = format!("http://127.0.0.1:{}{}", port, endpoint);
+        if let Ok(resp) = client.get(url).send().await {
+            if resp.status().is_success() {
+                return true;
+            }
+        }
     }
+    false
 }
 
 // Poll /health every 500ms until ready or timeout
@@ -95,8 +97,8 @@ async fn wait_for_server_ready(
         .timeout(std::time::Duration::from_secs(2))
         .build()
         .map_err(|error| format!("Failed to build health client: {error}"))?;
-    let health_url = format!("http://127.0.0.1:{}/health", port);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let endpoints = ["/health", "/v1/models"];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(70);
 
     println!("[llama] Waiting for server on port {}...", port);
 
@@ -105,17 +107,29 @@ async fn wait_for_server_ready(
             return Err("llama-server terminated before becoming ready".to_string());
         }
 
-        match client.get(&health_url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                println!("[llama] Server is ready ✓");
-                return Ok(());
+        let mut ready = false;
+        for endpoint in endpoints {
+            let url = format!("http://127.0.0.1:{}{}", port, endpoint);
+            match client.get(url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    ready = true;
+                    break;
+                }
+                Ok(resp) => {
+                    println!(
+                        "[llama] Still loading model... endpoint={} status={}",
+                        endpoint,
+                        resp.status()
+                    );
+                }
+                Err(_) => {
+                    // Port not yet bound, keep waiting
+                }
             }
-            Ok(resp) => {
-                println!("[llama] Still loading model... ({})", resp.status());
-            }
-            Err(_) => {
-                // Port not yet bound, keep waiting
-            }
+        }
+        if ready {
+            println!("[llama] Server is ready ✓");
+            return Ok(());
         }
         tokio::select! {
             _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
@@ -127,7 +141,7 @@ async fn wait_for_server_ready(
         }
     }
 
-    Err("llama-server did not become ready within 120 seconds".to_string())
+    Err("llama-server did not become ready within 70 seconds".to_string())
 }
 
 // Drain stdout/stderr in a background task so the process never gets SIGPIPE
@@ -158,7 +172,108 @@ fn spawn_log_drain(mut rx: Receiver<CommandEvent>, terminated_tx: watch::Sender<
     });
 }
 
+fn validate_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
+    let binaries_dir = app
+        .path()
+        .resolve("binaries", BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to resolve local AI runtime directory: {e}"))?;
+    if !binaries_dir.exists() {
+        return Err(format!(
+            "Missing local AI runtime directory: {}. Reinstall the app or run the documented installer.",
+            binaries_dir.display()
+        ));
+    }
+
+    let required = [
+        "libllama-common.0.0.9025.dylib",
+        "libllama.0.0.9025.dylib",
+        "libggml.0.10.2.dylib",
+        "libggml-base.0.10.2.dylib",
+        "libggml-cpu.0.10.2.dylib",
+        "libggml-metal.0.10.2.dylib",
+        "libggml-blas.0.10.2.dylib",
+        "libggml-rpc.0.10.2.dylib",
+        "libmtmd.0.0.9025.dylib",
+    ];
+
+    for file in required {
+        let path = binaries_dir.join(file);
+        let meta = std::fs::metadata(&path).map_err(|_| {
+            format!(
+                "Missing local AI runtime file: {}. Run `npm run llm:repair`.",
+                path.display()
+            )
+        })?;
+        if meta.len() == 0 {
+            return Err(format!(
+                "Corrupted local AI runtime file (0 bytes): {}. Run `npm run llm:repair`.",
+                path.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn repair_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("Failed to read current dir: {e}"))?;
+    let src_dir = cwd.join("src-tauri").join("target").join("debug");
+    let dst_dir = app
+        .path()
+        .resolve("binaries", BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to resolve runtime destination directory: {e}"))?;
+
+    if !src_dir.exists() || !dst_dir.exists() {
+        return Err(format!(
+            "Local AI runtime repair directories are missing. source={} destination={}",
+            src_dir.display(),
+            dst_dir.display()
+        ));
+    }
+
+    let entries = std::fs::read_dir(&src_dir)
+        .map_err(|e| format!("Failed to read runtime source dir: {e}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read runtime source entry: {e}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("dylib") {
+            continue;
+        }
+        if path.file_name().is_none() {
+            continue;
+        }
+        let dest_path = dst_dir.join(path.file_name().unwrap());
+        std::fs::copy(&path, &dest_path).map_err(|e| {
+            format!(
+                "Failed to repair runtime file {} -> {}: {e}",
+                path.display(),
+                dest_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
 pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
+    if let Err(initial_error) = validate_llama_runtime_files(app) {
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "[llama] Runtime validation failed: {initial_error}. Attempting auto-repair..."
+            );
+            repair_llama_runtime_files(app)?;
+            validate_llama_runtime_files(app).map_err(|post_repair_error| {
+                format!(
+                    "{post_repair_error} Auto-repair attempted but failed verification. Run `npm run llm:repair`."
+                )
+            })?;
+        } else {
+            return Err(format!(
+                "{initial_error} Please reinstall Localbrain or run the documented runtime installer."
+            ));
+        }
+    }
+
     let state = app.state::<LocalLlmState>();
     let port = state.server_port;
 

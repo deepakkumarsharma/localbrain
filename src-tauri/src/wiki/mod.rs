@@ -167,15 +167,15 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
         format!("# `{file_path}`"),
         String::new(),
         format!(
-            "> Auto-generated from indexed source symbols. Parsed {} symbols.",
+            "> Generated from local parser symbols ({} found). This page summarizes structure and likely responsibilities.",
             symbols.len()
         ),
         String::new(),
-        "## Overview".to_string(),
+        "## Quick Summary".to_string(),
         String::new(),
-        format!("- Module profile: **{}**", module_profile),
+        format!("- Role: **{}**", module_profile),
         format!(
-            "- Structure: **{} components**, **{} functions**, **{} methods**, **{} types**, **{} imports**.",
+            "- Structure: **{} components**, **{} functions**, **{} methods**, **{} types**, **{} imports**",
             components.len(),
             functions.len(),
             methods.len(),
@@ -183,16 +183,18 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
             imports.len()
         ),
         String::new(),
-        "## API and Entry Points".to_string(),
+        "## Exposed API and Entry Points".to_string(),
         String::new(),
     ];
 
     if exports.is_empty() && components.is_empty() {
-        lines.push("- No explicit exported entry points detected.".to_string());
+        lines.push(
+            "- No explicit exports were detected in parser output for this file.".to_string(),
+        );
     } else {
         for symbol in exports.iter().chain(components.iter()).take(12) {
             lines.push(format!(
-                "- `{}` ({}) at L{}:{}",
+                "- `{}` ({}) at `L{}:{}`",
                 symbol.name,
                 human_kind_label(symbol.kind),
                 symbol.range.start_line,
@@ -202,11 +204,11 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
     }
 
     lines.push(String::new());
-    lines.push("## Dependency Map".to_string());
+    lines.push("## Dependencies".to_string());
     lines.push(String::new());
     lines.push("### External Libraries".to_string());
     if external_imports.is_empty() {
-        lines.push("- None detected".to_string());
+        lines.push("- No external package imports detected.".to_string());
     } else {
         for symbol in external_imports.iter().take(20) {
             lines.push(format!(
@@ -218,9 +220,9 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
     }
 
     lines.push(String::new());
-    lines.push("### Local Module Imports".to_string());
+    lines.push("### Local Module Links".to_string());
     if local_imports.is_empty() {
-        lines.push("- None detected".to_string());
+        lines.push("- No relative/local imports detected.".to_string());
     } else {
         for symbol in local_imports.iter().take(20) {
             lines.push(format!(
@@ -232,14 +234,14 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
     }
 
     lines.push(String::new());
-    lines.push("## Implementation Details".to_string());
+    lines.push("## Internal Implementation".to_string());
     lines.push(String::new());
 
     if !hooks.is_empty() {
         lines.push("### Hooks".to_string());
         for hook in hooks.iter().take(12) {
             lines.push(format!(
-                "- `{}` at L{}:{}",
+                "- `{}` at `L{}:{}`",
                 hook.name, hook.range.start_line, hook.range.start_column
             ));
         }
@@ -255,7 +257,7 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
         lines.push("### Functions".to_string());
         for symbol in internal_functions.iter().take(16) {
             lines.push(format!(
-                "- `{}` at L{}:{}",
+                "- `{}` at `L{}:{}`",
                 symbol.name, symbol.range.start_line, symbol.range.start_column
             ));
         }
@@ -266,7 +268,7 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
         lines.push("### Methods".to_string());
         for symbol in methods.iter().take(16) {
             lines.push(format!(
-                "- `{}` at L{}:{}",
+                "- `{}` at `L{}:{}`",
                 symbol.name, symbol.range.start_line, symbol.range.start_column
             ));
         }
@@ -284,7 +286,7 @@ fn render_file_page(file_path: &str, symbols: &[CodeSymbol]) -> String {
         lines.push("### Types and Models".to_string());
         for symbol in type_symbols.iter().take(16) {
             lines.push(format!(
-                "- `{}` ({}) at L{}:{}",
+                "- `{}` ({}) at `L{}:{}`",
                 symbol.name,
                 human_kind_label(symbol.kind),
                 symbol.range.start_line,

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Download, FileText, GitBranch, Search, Workflow, X } from 'lucide-react';
+import { Download, FileText, GitBranch, Loader2, Search, Workflow, X } from 'lucide-react';
 import { FlowView } from './FlowView';
 import { GraphView } from './GraphView';
 import { WikiView } from './WikiView';
@@ -19,6 +19,8 @@ export function MainPanel() {
   const {
     activePanel,
     activeSourcePath,
+    projectPath,
+    isProjectLoading,
     graphView,
     setActivePanel,
     setGraphError,
@@ -45,8 +47,11 @@ export function MainPanel() {
   }, [activePanel, activeSourcePath, handleOpenGraph]);
 
   async function handleExportWiki() {
+    if (!projectPath || isProjectLoading) {
+      return;
+    }
     try {
-      const summary = await generate_wiki('.');
+      const summary = await generate_wiki(projectPath);
       setWikiResult(summary);
       setActivePanel('wiki');
     } catch (error) {
@@ -94,7 +99,7 @@ export function MainPanel() {
       icon: Download,
       run: () => void handleExportWiki(),
     },
-  ];
+  ].filter((item) => (item.label === 'Export Wiki' ? Boolean(projectPath) : true));
 
   const dynamicLegendItems = buildDynamicLegend(graphView);
 
@@ -131,9 +136,14 @@ export function MainPanel() {
             className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"
             type="button"
             onClick={handleExportWiki}
+            disabled={!projectPath || isProjectLoading}
           >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            Export Wiki
+            {isProjectLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="h-4 w-4" aria-hidden="true" />
+            )}
+            {isProjectLoading ? 'Export Wiki (loading...)' : 'Export Wiki'}
           </button>
           <button
             className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"

@@ -14,23 +14,23 @@ mod wiki;
 
 use api::{get_agent_api_status, start_agent_api, stop_agent_api, AgentApiState};
 use commands::{
-    ask_local, check_file_changed, generate_wiki, get_app_version, get_file_metadata,
-    get_graph_context, get_graph_symbols, get_graph_view, get_index_status, get_local_llm_status,
-    get_provider_settings, get_wiki_content, hybrid_search, index_file, index_file_to_graph,
-    index_path, parse_source_file, rebuild_search_index, record_file_metadata, search_code,
-    set_local_model_path, set_provider, start_local_llm, stop_local_llm,
+    ask_local, check_file_changed, clear_search_index, generate_wiki, get_app_version,
+    get_file_metadata, get_graph_context, get_graph_symbols, get_graph_view, get_index_status,
+    get_local_llm_status, get_provider_settings, get_wiki_content, hybrid_search, index_file,
+    index_file_to_graph, index_path, parse_source_file, rebuild_search_index, record_file_metadata,
+    resolve_project_root, search_code, set_local_model_path, set_provider, set_workspace_root,
+    start_local_llm, stop_local_llm,
 };
 use settings::SettingsStore;
-use tauri::Manager;
-use tauri::RunEvent;
+use tauri::{Manager, RunEvent};
 use watcher::{start_watcher, WatcherState};
 
 fn main() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(WatcherState::new())
         .manage(AgentApiState::new())
         .manage(SettingsStore::new())
@@ -50,10 +50,8 @@ fn main() {
                 metadata::MetadataStore::open_default(app.handle()),
             )?;
             app.manage(metadata_store);
-
             let settings_store = app.state::<SettingsStore>();
             settings_store.load_from_disk(app.handle());
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -66,7 +64,6 @@ fn main() {
             get_graph_symbols,
             get_graph_view,
             get_index_status,
-            get_local_llm_status,
             get_provider_settings,
             get_wiki_content,
             generate_wiki,
@@ -75,15 +72,19 @@ fn main() {
             index_file_to_graph,
             index_path,
             parse_source_file,
+            clear_search_index,
             rebuild_search_index,
             record_file_metadata,
+            resolve_project_root,
             search_code,
+            get_local_llm_status,
             set_local_model_path,
             set_provider,
+            set_workspace_root,
             start_agent_api,
             start_local_llm,
-            stop_agent_api,
             stop_local_llm,
+            stop_agent_api,
             start_watcher
         ])
         .build(tauri::generate_context!())
