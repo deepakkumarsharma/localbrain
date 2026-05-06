@@ -1,3 +1,5 @@
+mod generic;
+mod python;
 mod types;
 mod typescript;
 
@@ -48,7 +50,14 @@ fn parse_source_file(
 ) -> Result<ParsedFile, ParserError> {
     let source = fs::read_to_string(source_path)?;
 
-    typescript::parse_source(display_path, language, &source)
+    match language {
+        SourceLanguage::JavaScript
+        | SourceLanguage::TypeScript
+        | SourceLanguage::Tsx
+        | SourceLanguage::Jsx => typescript::parse_source(display_path, language, &source),
+        SourceLanguage::Python => python::parse_source(display_path, language, &source),
+        _ => Ok(generic::parse_source(display_path, language, &source)),
+    }
 }
 
 #[cfg(test)]
@@ -67,13 +76,45 @@ fn resolve_source_path(path: &Path) -> std::path::PathBuf {
 
 fn language_from_path(path: &Path) -> Result<SourceLanguage, ParserError> {
     match path.extension().and_then(|extension| extension.to_str()) {
-        Some("js") => Ok(SourceLanguage::JavaScript),
-        Some("jsx") => Ok(SourceLanguage::Jsx),
-        Some("ts") => Ok(SourceLanguage::TypeScript),
-        Some("tsx") => Ok(SourceLanguage::Tsx),
+        Some(extension) => language_from_extension(extension)
+            .ok_or_else(|| ParserError::UnsupportedExtension(extension.to_string())),
         extension => Err(ParserError::UnsupportedExtension(
             extension.unwrap_or("none").to_string(),
         )),
+    }
+}
+
+pub(crate) fn language_from_extension(extension: &str) -> Option<SourceLanguage> {
+    match extension {
+        "js" | "mjs" | "cjs" => Some(SourceLanguage::JavaScript),
+        "jsx" => Some(SourceLanguage::Jsx),
+        "ts" | "mts" | "cts" => Some(SourceLanguage::TypeScript),
+        "tsx" => Some(SourceLanguage::Tsx),
+        "rs" => Some(SourceLanguage::Rust),
+        "go" => Some(SourceLanguage::Go),
+        "py" => Some(SourceLanguage::Python),
+        "java" => Some(SourceLanguage::Java),
+        "kt" | "kts" => Some(SourceLanguage::Kotlin),
+        "swift" => Some(SourceLanguage::Swift),
+        "rb" => Some(SourceLanguage::Ruby),
+        "php" => Some(SourceLanguage::Php),
+        "c" | "h" => Some(SourceLanguage::C),
+        "cpp" | "hpp" => Some(SourceLanguage::Cpp),
+        "cs" => Some(SourceLanguage::CSharp),
+        "sh" | "bash" | "zsh" | "fish" => Some(SourceLanguage::Shell),
+        "sql" => Some(SourceLanguage::Sql),
+        "json" | "jsonc" => Some(SourceLanguage::Json),
+        "yaml" | "yml" => Some(SourceLanguage::Yaml),
+        "toml" => Some(SourceLanguage::Toml),
+        "ini" | "cfg" | "conf" => Some(SourceLanguage::Ini),
+        "xml" => Some(SourceLanguage::Xml),
+        "css" => Some(SourceLanguage::Css),
+        "scss" => Some(SourceLanguage::Scss),
+        "less" => Some(SourceLanguage::Less),
+        "vue" => Some(SourceLanguage::Vue),
+        "svelte" => Some(SourceLanguage::Svelte),
+        "astro" => Some(SourceLanguage::Astro),
+        _ => None,
     }
 }
 
@@ -117,7 +158,10 @@ fn normalize_relative_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_display_path, normalize_relative_path, parse_file, SymbolKind};
+    use super::{
+        language_from_extension, normalize_display_path, normalize_relative_path, parse_file,
+        SourceLanguage, SymbolKind,
+    };
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -145,6 +189,48 @@ mod tests {
             normalize_relative_path(Path::new("../src/App.tsx")),
             "src/App.tsx"
         );
+    }
+
+    #[test]
+    fn parses_python_symbols() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        let path = temp_dir.path().join("page_index.py");
+        std::fs::write(
+            &path,
+            "import os\nfrom client import PageClient\n\nclass PageIndex:\n    pass\n\ndef check_title():\n    return True\n",
+        )
+        .expect("python file should be written");
+
+        let parsed = parse_file(&path).expect("python file should parse");
+
+        assert_eq!(parsed.language, SourceLanguage::Python);
+        assert!(parsed
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "PageIndex" && symbol.kind == SymbolKind::Class));
+        assert!(parsed
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "check_title" && symbol.kind == SymbolKind::Function));
+        assert!(parsed
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "os" && symbol.kind == SymbolKind::Import));
+    }
+
+    #[test]
+    fn maps_all_indexable_extensions_to_parser_languages() {
+        for extension in [
+            "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx", "rs", "go", "py", "java", "kt",
+            "kts", "swift", "rb", "php", "c", "h", "cpp", "hpp", "cs", "sh", "bash", "zsh", "fish",
+            "sql", "json", "jsonc", "yaml", "yml", "toml", "ini", "cfg", "conf", "xml", "css",
+            "scss", "less", "vue", "svelte", "astro",
+        ] {
+            assert!(
+                language_from_extension(extension).is_some(),
+                "{extension} should map to a parser language"
+            );
+        }
     }
 
     #[test]

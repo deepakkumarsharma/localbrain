@@ -1,6 +1,34 @@
 import { invoke } from '@tauri-apps/api/core';
 
-export type SourceLanguage = 'javaScript' | 'typeScript' | 'tsx' | 'jsx';
+export type SourceLanguage =
+  | 'javaScript'
+  | 'typeScript'
+  | 'tsx'
+  | 'jsx'
+  | 'rust'
+  | 'go'
+  | 'python'
+  | 'java'
+  | 'kotlin'
+  | 'swift'
+  | 'ruby'
+  | 'php'
+  | 'c'
+  | 'cpp'
+  | 'cSharp'
+  | 'shell'
+  | 'sql'
+  | 'json'
+  | 'yaml'
+  | 'toml'
+  | 'ini'
+  | 'xml'
+  | 'css'
+  | 'scss'
+  | 'less'
+  | 'vue'
+  | 'svelte'
+  | 'astro';
 
 export type SymbolKind =
   | 'function'

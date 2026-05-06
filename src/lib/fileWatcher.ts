@@ -5,8 +5,8 @@ import { useAppStore } from '../store/useAppStore';
 import { parseSourceFile } from './parser';
 import { getGraphSymbols } from './graph';
 
-// The backend watcher emits several useful file types, but incremental graph indexing is JS/TS-only.
-const SOURCE_FILE_PATTERN = /\.(jsx?|tsx?)$/i;
+const SOURCE_FILE_PATTERN =
+  /\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|rs|go|py|java|kt|kts|swift|rb|php|c|h|cpp|hpp|cs|sh|bash|zsh|fish|sql|json|jsonc|ya?ml|toml|ini|cfg|conf|xml|css|scss|less|vue|svelte|astro)$/i;
 
 export async function initFileWatcher(projectPath: string) {
   console.log('Initializing file watcher for:', projectPath);
@@ -36,7 +36,7 @@ export async function initFileWatcher(projectPath: string) {
         store.setIndexFileResult(indexResult);
 
         // 2. If the file being parsed in the UI is the one that changed, update it
-        if (store.parsedFile?.path === filePath || filePath.endsWith('App.tsx')) {
+        if (store.parsedFile?.path === filePath || store.activeSourcePath === filePath) {
           const parsed = await parseSourceFile(filePath);
           store.setParsedFile(parsed);
 

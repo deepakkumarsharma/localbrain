@@ -1,42 +1,47 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { ErrorBanner } from './components/ErrorBanner';
 import { MainPanel } from './components/MainPanel';
 import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
 import { initFileWatcher } from './lib/fileWatcher';
-import { indexPath } from './lib/indexer';
+import { indexPath, resolveProjectRoot, setWorkspaceRoot } from './lib/indexer';
+import { clearSearchIndex, rebuildSearchIndex } from './lib/search';
+import { generate_wiki } from './lib/wiki';
 import { useAppStore } from './store/useAppStore';
 
 export default function App() {
-  const { setAppVersion, theme, toggleTheme, setIndexPathResult } = useAppStore();
+  const {
+    setAppVersion,
+    theme,
+    toggleTheme,
+    setIndexPathResult,
+    setIndexError,
+    setWikiError,
+    setWikiResult,
+    setSearchIndexResult,
+    setSearchError,
+    setProjectPath,
+    setProjectLoading,
+    clearProjectData,
+  } = useAppStore();
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [rightPanelWidth, setRightPanelWidth] = useState(450);
   const MIN_CENTER_WIDTH = 380;
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
+  const watcherUnlistenRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     void invoke<string>('get_app_version')
       .then(setAppVersion)
       .catch(() => setAppVersion('unknown'));
-
-    void indexPath('.')
-      .then(setIndexPathResult)
-      .catch((error) => console.error('Initial index failed:', error));
-  }, [setAppVersion, setIndexPathResult]);
+  }, [setAppVersion]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-
-    void initFileWatcher('.')
-      .then((ul) => {
-        unlisten = ul;
-      })
-      .catch(console.error);
-
     return () => {
-      if (unlisten) {
-        unlisten();
+      if (watcherUnlistenRef.current) {
+        watcherUnlistenRef.current();
       }
     };
   }, []);
@@ -81,25 +86,15 @@ export default function App() {
     document.body.style.userSelect = '';
   }, []);
 
-  const resize = useCallback(
-    (e: MouseEvent) => {
-      if (isResizingSidebar.current) {
-        const maxCombined = Math.max(window.innerWidth - MIN_CENTER_WIDTH, 0);
-        const panelMax = Math.min(500, maxCombined - rightPanelWidth);
-        const newWidth = Math.min(Math.max(300, e.clientX), Math.max(300, panelMax));
-        setSidebarWidth(newWidth);
-      } else if (isResizingRightPanel.current) {
-        const maxCombined = Math.max(window.innerWidth - MIN_CENTER_WIDTH, 0);
-        const panelMax = Math.min(600, maxCombined - sidebarWidth);
-        const newWidth = Math.min(
-          Math.max(300, window.innerWidth - e.clientX),
-          Math.max(300, panelMax),
-        );
-        setRightPanelWidth(newWidth);
-      }
-    },
-    [rightPanelWidth, sidebarWidth],
-  );
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizingSidebar.current) {
+      const newWidth = Math.min(Math.max(200, e.clientX), 400);
+      setSidebarWidth(newWidth);
+    } else if (isResizingRightPanel.current) {
+      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
+      setRightPanelWidth(newWidth);
+    }
+  }, []);
 
   useEffect(() => {
     window.addEventListener('mousemove', resize);
@@ -110,27 +105,99 @@ export default function App() {
     };
   }, [resize, stopResizing]);
 
+  const loadProject = useCallback(
+    async (selectedPath: string) => {
+      clearProjectData();
+      setProjectLoading(true, 'Preparing workspace...');
+      setIndexError(null);
+      setWikiError(null);
+      setSearchError(null);
+
+      try {
+        const path = await resolveProjectRoot(selectedPath);
+        setProjectPath(path);
+        if (path !== selectedPath) {
+          setProjectLoading(true, `Detected project root: ${path}`);
+        }
+        await setWorkspaceRoot(path);
+        setProjectLoading(true, 'Scanning source files...');
+        const summary = await indexPath(path);
+        setIndexPathResult(summary);
+
+        setProjectLoading(true, 'Rebuilding search index...');
+        await clearSearchIndex();
+        const searchSummary = await rebuildSearchIndex(path);
+        setSearchIndexResult(searchSummary);
+
+        setProjectLoading(true, 'Starting file watcher...');
+        if (watcherUnlistenRef.current) {
+          watcherUnlistenRef.current();
+        }
+        watcherUnlistenRef.current = await initFileWatcher(path);
+
+        setProjectLoading(true, 'Generating wiki from indexed sources...');
+        const wikiSummary = await generate_wiki(path);
+        setWikiResult(wikiSummary);
+        if (summary.errors.length > 0) {
+          setIndexError(summary.errors.join('\n'));
+        }
+        setProjectLoading(
+          false,
+          `Ready: ${summary.filesSeen} indexed · ${summary.filesSkipped} skipped · ${summary.errors.length} errors`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setProjectLoading(false, 'Indexing failed');
+        setIndexError(message);
+      }
+    },
+    [
+      clearProjectData,
+      setIndexError,
+      setIndexPathResult,
+      setProjectLoading,
+      setProjectPath,
+      setSearchError,
+      setSearchIndexResult,
+      setWikiError,
+      setWikiResult,
+    ],
+  );
+
+  const removeProject = useCallback(() => {
+    if (watcherUnlistenRef.current) {
+      watcherUnlistenRef.current();
+      watcherUnlistenRef.current = null;
+    }
+    setProjectPath(null);
+    clearProjectData();
+    setProjectLoading(false, 'No project selected');
+  }, [clearProjectData, setProjectLoading, setProjectPath]);
+
   return (
-    <div
-      className="grid h-screen min-w-[1180px] overflow-hidden bg-app-background text-app-text"
-      style={{
-        gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
-      }}
-    >
-      <div className="relative h-full overflow-hidden">
-        <Sidebar />
-        <div
-          className="absolute right-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
-          onMouseDown={startResizingSidebar}
-        />
-      </div>
-      <MainPanel />
-      <div className="relative h-full overflow-hidden">
-        <div
-          className="absolute left-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
-          onMouseDown={startResizingRightPanel}
-        />
-        <RightPanel />
+    <div className="flex h-screen min-w-[1180px] flex-col overflow-hidden bg-app-background text-app-text">
+      <ErrorBanner />
+      <div
+        className="grid min-h-0 flex-1"
+        style={{
+          gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr) ${rightPanelWidth}px`,
+        }}
+      >
+        <div className="relative h-full overflow-hidden">
+          <Sidebar onSelectProject={loadProject} onRemoveProject={removeProject} />
+          <div
+            className="absolute right-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
+            onMouseDown={startResizingSidebar}
+          />
+        </div>
+        <MainPanel />
+        <div className="relative h-full overflow-hidden">
+          <div
+            className="absolute left-0 top-0 z-50 h-full w-1.5 cursor-col-resize hover:bg-app-accent/30 active:bg-app-accent transition-colors"
+            onMouseDown={startResizingRightPanel}
+          />
+          <RightPanel />
+        </div>
       </div>
     </div>
   );

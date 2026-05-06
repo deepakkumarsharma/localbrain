@@ -1,4 +1,5 @@
 use crate::metadata::MetadataStore;
+use crate::parser::language_from_extension;
 use notify_debouncer_mini::{
     new_debouncer,
     notify::{RecommendedWatcher, RecursiveMode},
@@ -91,12 +92,35 @@ fn should_emit_path(path: &Path) -> bool {
         return false;
     }
 
-    path.extension().is_some_and(|extension| {
-        matches!(
-            extension.to_string_lossy().as_ref(),
-            "js" | "jsx" | "ts" | "tsx" | "rs" | "py" | "md" | "java" | "html"
-        )
-    })
+    let has_supported_extension = path.extension().is_some_and(|extension| {
+        let extension = extension.to_string_lossy();
+        language_from_extension(extension.as_ref()).is_some()
+            || matches!(extension.as_ref(), "md" | "html" | "txt")
+    });
+
+    has_supported_extension || is_extensionless_watch_file(path)
+}
+
+fn is_extensionless_watch_file(path: &Path) -> bool {
+    path.extension().is_none()
+        && path.file_name().is_some_and(|name| {
+            matches!(
+                name.to_string_lossy().as_ref(),
+                "Dockerfile"
+                    | "dockerfile"
+                    | "Containerfile"
+                    | "Makefile"
+                    | "makefile"
+                    | "justfile"
+                    | "Procfile"
+                    | "Brewfile"
+                    | "Vagrantfile"
+                    | "Jenkinsfile"
+                    | "Tiltfile"
+                    | "README"
+                    | "LICENSE"
+            )
+        })
 }
 
 #[cfg(test)]
@@ -122,7 +146,9 @@ mod tests {
 
     #[test]
     fn ignores_unsupported_extensions() {
-        assert!(!should_emit_path(Path::new("src/styles.css")));
-        assert!(!should_emit_path(Path::new("README")));
+        assert!(should_emit_path(Path::new("src/styles.css")));
+        assert!(should_emit_path(Path::new("src/config.yaml")));
+        assert!(should_emit_path(Path::new("README")));
+        assert!(should_emit_path(Path::new("Dockerfile")));
     }
 }

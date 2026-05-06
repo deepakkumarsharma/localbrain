@@ -29,8 +29,20 @@ CREATE TABLE IF NOT EXISTS search_documents (
   FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
 )";
 
-// The current retrieval MVP stores one document-level embedding per path.
-// Chunk-level embeddings will replace this with a composite (path, chunk_id) key.
+pub const CREATE_SEARCH_CHUNKS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS search_chunks (
+  path TEXT NOT NULL,
+  chunk_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  start_line INTEGER NOT NULL,
+  end_line INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(path, chunk_id),
+  FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
+)";
+
 pub const CREATE_EMBEDDINGS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS embeddings (
   path TEXT PRIMARY KEY,
@@ -38,4 +50,15 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vector_json TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
+)";
+
+pub const CREATE_CHUNK_EMBEDDINGS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+  path TEXT NOT NULL,
+  chunk_id TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  vector_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(path, chunk_id),
+  FOREIGN KEY(path, chunk_id) REFERENCES search_chunks(path, chunk_id) ON DELETE CASCADE
 )";

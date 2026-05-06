@@ -7,6 +7,7 @@ use crate::parser::{parse_file_with_display_path, ParsedFile};
 use crate::search::{SearchIndexSummary, SearchResult};
 use crate::settings::{LlmProvider, ProviderSettings, SettingsStore};
 use crate::wiki::WikiSummary;
+use std::path::{Path, PathBuf};
 
 #[tauri::command]
 pub fn get_app_version() -> &'static str {
@@ -163,6 +164,15 @@ pub async fn rebuild_search_index(
 }
 
 #[tauri::command]
+pub async fn clear_search_index(
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<(), String> {
+    crate::search::clear_search_index(&metadata_store)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn search_code(
     query: String,
     limit: Option<usize>,
@@ -252,4 +262,118 @@ pub fn set_local_model_path(
     settings_store: tauri::State<SettingsStore>,
 ) -> Result<ProviderSettings, String> {
     settings_store.set_local_model_path(&app, path)
+}
+
+#[tauri::command]
+pub fn set_workspace_root(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<String, String> {
+    metadata_store
+        .set_workspace_root(path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn resolve_project_root(path: String) -> Result<String, String> {
+    let selected = PathBuf::from(path);
+    let canonical = selected
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve selected folder: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("selected path is not a directory".to_string());
+    }
+
+    let selected_score = score_project_root_candidate(&canonical);
+    let mut best = canonical.clone();
+    let mut best_score = selected_score;
+
+    for ancestor in canonical.ancestors().take(7) {
+        if !ancestor.is_dir() {
+            continue;
+        }
+        let score = score_project_root_candidate(ancestor);
+        if score > best_score {
+            best = ancestor.to_path_buf();
+            best_score = score;
+        }
+    }
+
+    let should_promote =
+        best != canonical && (best_score >= selected_score + 40 || is_suspicious_leaf(&canonical));
+
+    if should_promote {
+        Ok(best.to_string_lossy().to_string())
+    } else {
+        Ok(canonical.to_string_lossy().to_string())
+    }
+}
+
+fn score_project_root_candidate(path: &Path) -> i32 {
+    let mut score = 0;
+    let leaf = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if is_suspicious_name(&leaf) {
+        score -= 25;
+    }
+    if leaf == "node_modules" {
+        score -= 100;
+    }
+
+    if path.join(".git").exists() {
+        score += 100;
+    }
+
+    for marker in [
+        "package.json",
+        "go.mod",
+        "Cargo.toml",
+        "pyproject.toml",
+        "requirements.txt",
+        "setup.py",
+        "Gemfile",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+    ] {
+        if path.join(marker).exists() {
+            score += 30;
+        }
+    }
+
+    if path.join("README.md").exists() {
+        score += 5;
+    }
+
+    score
+}
+
+fn is_suspicious_leaf(path: &Path) -> bool {
+    let leaf = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    is_suspicious_name(&leaf)
+}
+
+fn is_suspicious_name(name: &str) -> bool {
+    matches!(
+        name,
+        "output"
+            | "outputs"
+            | "report"
+            | "reports"
+            | "dist"
+            | "build"
+            | "target"
+            | "coverage"
+            | "tmp"
+            | "temp"
+            | "node_modules"
+    )
 }
