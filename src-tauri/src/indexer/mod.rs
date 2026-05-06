@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 
 use crate::graph::{GraphError, GraphIngestSummary, GraphStore};
 use crate::metadata::{FileChangeStatus, FileMetadata, IndexRunSummary, MetadataStore};
-use crate::parser::{parse_file_with_display_path, ParserError};
+use crate::parser::{language_from_extension, parse_file_with_display_path, ParserError};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -53,16 +53,68 @@ pub async fn index_file(
 ) -> Result<IndexFileSummary, IndexerError> {
     let requested_path = path.as_ref();
     let normalized_path = metadata_store.normalize_path(requested_path);
-
-    if !is_supported_source_file(requested_path) {
-        return Err(IndexerError::UnsupportedPath(normalized_path));
-    }
+    let supports_graph_parse = is_graph_source_file(requested_path);
 
     let status = metadata_store.classify_file(requested_path).await?;
+
+    if !supports_graph_parse {
+        return match status {
+            FileChangeStatus::Unchanged => {
+                let metadata = metadata_store.get_file(&normalized_path).await?;
+                Ok(IndexFileSummary {
+                    path: normalized_path,
+                    status: FileChangeStatus::Unchanged,
+                    skipped: true,
+                    metadata,
+                    graph: None,
+                })
+            }
+            FileChangeStatus::Deleted => {
+                graph_store.clear_file(&normalized_path)?;
+                metadata_store.mark_file_deleted(&normalized_path).await?;
+                Ok(IndexFileSummary {
+                    path: normalized_path.clone(),
+                    status: FileChangeStatus::Deleted,
+                    skipped: false,
+                    metadata: metadata_store.get_file(&normalized_path).await?,
+                    graph: None,
+                })
+            }
+            FileChangeStatus::New | FileChangeStatus::Changed => {
+                let metadata = metadata_store.mark_file_indexed(requested_path).await?;
+                Ok(IndexFileSummary {
+                    path: normalized_path,
+                    status,
+                    skipped: true,
+                    metadata: Some(metadata),
+                    graph: None,
+                })
+            }
+            FileChangeStatus::Error => Err(IndexerError::UnsupportedPath(normalized_path)),
+        };
+    }
 
     match status {
         FileChangeStatus::Unchanged => {
             let metadata = metadata_store.get_file(&normalized_path).await?;
+            if graph_store
+                .get_symbols_for_file(&normalized_path)?
+                .is_empty()
+            {
+                let source_path = metadata_store.resolve_path(requested_path)?;
+                let parsed = parse_file_with_display_path(source_path, &normalized_path)?;
+                let graph_summary = upsert_parsed_file_with_retries(graph_store, &parsed).await?;
+                let metadata = metadata_store.mark_file_indexed(requested_path).await?;
+
+                return Ok(IndexFileSummary {
+                    path: parsed.path,
+                    status: FileChangeStatus::Unchanged,
+                    skipped: false,
+                    metadata: Some(metadata),
+                    graph: Some(graph_summary),
+                });
+            }
+
             Ok(IndexFileSummary {
                 path: normalized_path,
                 status: FileChangeStatus::Unchanged,
@@ -85,42 +137,39 @@ pub async fn index_file(
         FileChangeStatus::New | FileChangeStatus::Changed => {
             let source_path = metadata_store.resolve_path(requested_path)?;
             let parsed = parse_file_with_display_path(source_path, &normalized_path)?;
-
-            // Retry logic for KuzuDB contention
-            let mut last_error = None;
-            let mut graph = None;
-
-            for i in 0..3 {
-                match graph_store.upsert_parsed_file(&parsed) {
-                    Ok(summary) => {
-                        graph = Some(summary);
-                        break;
-                    }
-                    Err(e) => {
-                        last_error = Some(IndexerError::Graph(e));
-                        if i < 2 {
-                            tokio::time::sleep(std::time::Duration::from_millis(50 * (i + 1)))
-                                .await;
-                        }
-                    }
-                }
-            }
-
-            if let Some(graph_summary) = graph {
-                let metadata = metadata_store.mark_file_indexed(requested_path).await?;
-                Ok(IndexFileSummary {
-                    path: parsed.path,
-                    status,
-                    skipped: false,
-                    metadata: Some(metadata),
-                    graph: Some(graph_summary),
-                })
-            } else {
-                Err(last_error.unwrap())
-            }
+            let graph_summary = upsert_parsed_file_with_retries(graph_store, &parsed).await?;
+            let metadata = metadata_store.mark_file_indexed(requested_path).await?;
+            Ok(IndexFileSummary {
+                path: parsed.path,
+                status,
+                skipped: false,
+                metadata: Some(metadata),
+                graph: Some(graph_summary),
+            })
         }
         FileChangeStatus::Error => Err(IndexerError::UnsupportedPath(normalized_path)),
     }
+}
+
+async fn upsert_parsed_file_with_retries(
+    graph_store: &GraphStore,
+    parsed: &crate::parser::ParsedFile,
+) -> Result<GraphIngestSummary, IndexerError> {
+    let mut last_error = None;
+
+    for i in 0..3 {
+        match graph_store.upsert_parsed_file(parsed) {
+            Ok(summary) => return Ok(summary),
+            Err(e) => {
+                last_error = Some(IndexerError::Graph(e));
+                if i < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (i + 1))).await;
+                }
+            }
+        }
+    }
+
+    Err(last_error.expect("retry loop should capture the final graph error"))
 }
 
 pub async fn index_path(
@@ -247,7 +296,7 @@ fn indexable_paths(
     let source_path = metadata_store.resolve_path(path)?;
 
     if source_path.is_file() {
-        return Ok(if is_supported_source_file(&source_path) {
+        return Ok(if is_indexable_file(&source_path) {
             vec![source_path]
         } else {
             Vec::new()
@@ -267,7 +316,7 @@ fn indexable_paths(
         let path = entry.path();
         let relative_path = path.strip_prefix(&source_path).unwrap_or(path);
 
-        if path.is_file() && is_supported_source_file(path) && !is_ignored_path(relative_path) {
+        if path.is_file() && is_indexable_file(path) && !is_ignored_path(relative_path) {
             paths.push(path.to_path_buf());
         }
     }
@@ -276,10 +325,88 @@ fn indexable_paths(
     Ok(paths)
 }
 
-fn is_supported_source_file(path: &Path) -> bool {
+fn is_graph_source_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension, "js" | "jsx" | "ts" | "tsx"))
+        .is_some_and(|extension| language_from_extension(extension).is_some())
+}
+
+fn is_indexable_file(path: &Path) -> bool {
+    let has_supported_extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension,
+                "js" | "mjs"
+                    | "cjs"
+                    | "jsx"
+                    | "ts"
+                    | "mts"
+                    | "cts"
+                    | "tsx"
+                    | "rs"
+                    | "go"
+                    | "py"
+                    | "java"
+                    | "kt"
+                    | "kts"
+                    | "swift"
+                    | "rb"
+                    | "php"
+                    | "c"
+                    | "h"
+                    | "cpp"
+                    | "hpp"
+                    | "cs"
+                    | "sh"
+                    | "bash"
+                    | "zsh"
+                    | "fish"
+                    | "sql"
+                    | "json"
+                    | "jsonc"
+                    | "yaml"
+                    | "yml"
+                    | "toml"
+                    | "ini"
+                    | "cfg"
+                    | "conf"
+                    | "xml"
+                    | "css"
+                    | "scss"
+                    | "less"
+                    | "vue"
+                    | "svelte"
+                    | "astro"
+                    | "md"
+                    | "txt"
+            )
+        });
+
+    has_supported_extension || is_extensionless_indexable_file(path)
+}
+
+fn is_extensionless_indexable_file(path: &Path) -> bool {
+    path.extension().is_none()
+        && path.file_name().is_some_and(|name| {
+            matches!(
+                name.to_string_lossy().as_ref(),
+                "Dockerfile"
+                    | "dockerfile"
+                    | "Containerfile"
+                    | "Makefile"
+                    | "makefile"
+                    | "justfile"
+                    | "Procfile"
+                    | "Brewfile"
+                    | "Vagrantfile"
+                    | "Jenkinsfile"
+                    | "Tiltfile"
+                    | "README"
+                    | "LICENSE"
+            )
+        })
 }
 
 fn is_ignored_path(path: &Path) -> bool {
@@ -322,9 +449,9 @@ fn usize_to_i64(value: usize) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{index_file, index_path, is_ignored_path, is_supported_source_file};
+    use super::{index_file, index_path, is_graph_source_file, is_ignored_path, is_indexable_file};
     use crate::graph::GraphStore;
-    use crate::metadata::MetadataStore;
+    use crate::metadata::{FileChangeStatus, MetadataStore};
     use std::fs;
     use std::path::Path;
 
@@ -337,6 +464,9 @@ mod tests {
         let metadata_store = MetadataStore::open(temp_dir.path().join("metadata"))
             .await
             .expect("metadata store should open");
+        metadata_store
+            .set_workspace_root(temp_dir.path())
+            .expect("workspace root should be set");
         let graph_store =
             GraphStore::open(temp_dir.path().join("graph")).expect("graph store should open");
 
@@ -370,6 +500,9 @@ mod tests {
         let metadata_store = MetadataStore::open(temp_dir.path().join("metadata"))
             .await
             .expect("metadata store should open");
+        metadata_store
+            .set_workspace_root(temp_dir.path())
+            .expect("workspace root should be set");
         let graph_store =
             GraphStore::open(temp_dir.path().join("graph")).expect("graph store should open");
 
@@ -377,17 +510,295 @@ mod tests {
             .await
             .expect("path should index");
 
-        assert_eq!(summary.files_seen, 1);
-        assert_eq!(summary.files_changed, 1);
+        assert!(summary.files_seen >= 1);
+        assert!(summary
+            .files
+            .iter()
+            .any(|file| file.path.ends_with("src/App.tsx")));
+        assert!(summary
+            .files
+            .iter()
+            .all(|file| !file.path.contains("node_modules")));
         assert!(summary.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn indexes_supported_graph_files_from_directory() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        fs::write(temp_dir.path().join("tsconfig.json"), "{}").expect("json should be written");
+        fs::write(
+            temp_dir.path().join("theme.go"),
+            "package theme\n\nfunc RenderTheme() {}\n",
+        )
+        .expect("go file should be written");
+        fs::write(temp_dir.path().join("README.md"), "# Hello")
+            .expect("markdown should be written");
+
+        let metadata_store = MetadataStore::open(temp_dir.path().join("metadata"))
+            .await
+            .expect("metadata store should open");
+        let graph_store =
+            GraphStore::open(temp_dir.path().join("graph")).expect("graph store should open");
+
+        let summary = index_path(temp_dir.path(), &metadata_store, &graph_store)
+            .await
+            .expect("path should index");
+
+        assert!(summary
+            .files
+            .iter()
+            .any(|file| file.path.ends_with("tsconfig.json")));
+        let go_file = summary
+            .files
+            .iter()
+            .find(|file| file.path.ends_with("theme.go"))
+            .expect("go file should be indexed");
+        assert!(!go_file.skipped);
+        assert_eq!(
+            go_file.graph.as_ref().map(|graph| graph.symbol_count),
+            Some(1)
+        );
+        assert!(summary
+            .files
+            .iter()
+            .any(|file| file.path.ends_with("README.md")));
+        assert!(summary.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn backfills_missing_graph_for_unchanged_supported_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        let source_path = temp_dir.path().join("page_index.py");
+        fs::write(
+            &source_path,
+            "import os\n\nclass PageIndex:\n    pass\n\ndef check_title():\n    return True\n",
+        )
+        .expect("python file should be written");
+
+        let metadata_store = MetadataStore::open(temp_dir.path().join("metadata"))
+            .await
+            .expect("metadata store should open");
+        metadata_store
+            .set_workspace_root(temp_dir.path())
+            .expect("workspace root should be set");
+        let graph_store =
+            GraphStore::open(temp_dir.path().join("graph")).expect("graph store should open");
+
+        metadata_store
+            .mark_file_indexed("page_index.py")
+            .await
+            .expect("metadata should be pre-marked as indexed");
+
+        let summary = index_path(temp_dir.path(), &metadata_store, &graph_store)
+            .await
+            .expect("path should index");
+        let file = summary
+            .files
+            .iter()
+            .find(|file| file.path.ends_with("page_index.py"))
+            .expect("python file should be present");
+
+        assert_eq!(file.status, FileChangeStatus::Unchanged);
+        assert!(!file.skipped);
+        assert_eq!(file.graph.as_ref().map(|graph| graph.symbol_count), Some(3));
+        assert!(graph_store
+            .get_symbols_for_file(&file.path)
+            .expect("symbols should be readable")
+            .iter()
+            .any(|symbol| symbol.name == "check_title"));
     }
 
     #[test]
     fn filters_supported_and_ignored_paths() {
-        assert!(is_supported_source_file(Path::new("src/App.tsx")));
-        assert!(!is_supported_source_file(Path::new("src/main.rs")));
+        assert!(is_graph_source_file(Path::new("src/App.tsx")));
+        assert!(is_graph_source_file(Path::new("src/main.rs")));
+        assert!(is_indexable_file(Path::new("src/main.rs")));
+        assert!(is_indexable_file(Path::new("README.md")));
+        assert!(is_indexable_file(Path::new("Dockerfile")));
+        assert!(!is_indexable_file(Path::new("docs/design.pdf")));
         assert!(is_ignored_path(Path::new("node_modules/pkg/index.ts")));
         assert!(is_ignored_path(Path::new(".localbrain/metadata.db")));
         assert!(!is_ignored_path(Path::new("src/App.tsx")));
+    }
+
+    // --- is_graph_source_file: comprehensive language coverage ---
+
+    #[test]
+    fn graph_source_file_accepts_all_parser_languages() {
+        let supported = [
+            "main.js", "index.mjs", "lib.cjs", "app.jsx",
+            "main.ts", "index.mts", "lib.cts", "component.tsx",
+            "main.rs", "server.go", "script.py",
+            "App.java", "Main.kt", "View.swift", "controller.rb", "index.php",
+            "util.c", "header.h", "engine.cpp", "types.hpp", "Service.cs",
+            "build.sh", "run.bash", "init.zsh", "setup.fish",
+            "schema.sql", "config.json", "settings.jsonc",
+            "docker-compose.yaml", "values.yml",
+            "Cargo.toml", "settings.ini", "app.cfg", "server.conf",
+            "pom.xml", "style.css", "theme.scss", "layout.less",
+            "App.vue", "Counter.svelte", "Page.astro",
+        ];
+        for file in supported {
+            assert!(
+                is_graph_source_file(Path::new(file)),
+                "{file} should be a graph source file"
+            );
+        }
+    }
+
+    #[test]
+    fn graph_source_file_rejects_non_parseable_files() {
+        let unsupported = [
+            "image.png", "archive.zip", "data.pdf", "binary.exe",
+            "README.md", "notes.txt", "Dockerfile",
+        ];
+        for file in unsupported {
+            assert!(
+                !is_graph_source_file(Path::new(file)),
+                "{file} should NOT be a graph source file"
+            );
+        }
+    }
+
+    // --- is_indexable_file: extension coverage ---
+
+    #[test]
+    fn indexable_file_accepts_all_documented_extensions() {
+        let extensions = [
+            "main.js", "index.mjs", "lib.cjs", "app.jsx",
+            "main.ts", "index.mts", "lib.cts", "component.tsx",
+            "main.rs", "server.go", "script.py",
+            "App.java", "Main.kt", "Main.kts", "View.swift",
+            "controller.rb", "index.php",
+            "util.c", "header.h", "engine.cpp", "types.hpp", "Service.cs",
+            "build.sh", "run.bash", "init.zsh", "setup.fish",
+            "schema.sql", "config.json", "settings.jsonc",
+            "docker-compose.yaml", "values.yml",
+            "Cargo.toml", "settings.ini", "app.cfg", "server.conf",
+            "pom.xml", "style.css", "theme.scss", "layout.less",
+            "App.vue", "Counter.svelte", "Page.astro",
+            "README.md", "notes.txt",
+        ];
+        for file in extensions {
+            assert!(
+                is_indexable_file(Path::new(file)),
+                "{file} should be indexable"
+            );
+        }
+    }
+
+    #[test]
+    fn indexable_file_rejects_binary_and_media_extensions() {
+        let unsupported = [
+            "image.png", "photo.jpg", "archive.zip", "binary.exe",
+            "data.pdf", "library.so", "object.o", "key.pem",
+            "cert.p12",
+        ];
+        for file in unsupported {
+            assert!(
+                !is_indexable_file(Path::new(file)),
+                "{file} should NOT be indexable"
+            );
+        }
+    }
+
+    // --- is_extensionless_indexable_file: named files ---
+
+    #[test]
+    fn extensionless_indexable_accepts_named_files() {
+        use super::is_extensionless_indexable_file;
+
+        let named_files = [
+            "Dockerfile", "dockerfile", "Containerfile",
+            "Makefile", "makefile", "justfile",
+            "Procfile", "Brewfile", "Vagrantfile",
+            "Jenkinsfile", "Tiltfile", "README", "LICENSE",
+        ];
+        for name in named_files {
+            assert!(
+                is_extensionless_indexable_file(Path::new(name)),
+                "{name} should be extensionless indexable"
+            );
+        }
+    }
+
+    #[test]
+    fn extensionless_indexable_rejects_unknown_names() {
+        use super::is_extensionless_indexable_file;
+
+        let unknown = ["NOTES", "TEMP", "random", "build_output"];
+        for name in unknown {
+            assert!(
+                !is_extensionless_indexable_file(Path::new(name)),
+                "{name} should NOT be extensionless indexable"
+            );
+        }
+    }
+
+    #[test]
+    fn extensionless_indexable_rejects_files_with_extensions() {
+        use super::is_extensionless_indexable_file;
+
+        // Even if named "Dockerfile.bak", it has an extension so should be rejected
+        assert!(!is_extensionless_indexable_file(Path::new("Dockerfile.bak")));
+    }
+
+    // --- is_ignored_path: comprehensive coverage ---
+
+    #[test]
+    fn ignored_path_catches_all_ignored_directories() {
+        let ignored = [
+            "node_modules/lodash/index.js",
+            ".git/config",
+            ".localbrain/metadata.db",
+            "vendor/pkg/lib.go",
+            ".venv/lib/python.py",
+            "__pycache__/module.pyc",
+            "dist/bundle.js",
+            "build/output.js",
+            ".next/server/page.js",
+            "target/debug/binary",
+            ".ssh/id_rsa",
+            ".aws/credentials",
+            ".env",
+        ];
+        for path in ignored {
+            assert!(
+                is_ignored_path(Path::new(path)),
+                "{path} should be ignored"
+            );
+        }
+    }
+
+    #[test]
+    fn ignored_path_does_not_reject_regular_source_files() {
+        let allowed = [
+            "src/main.rs",
+            "lib/utils.ts",
+            "app/models/user.rb",
+            "tests/integration_test.go",
+            "docs/guide.md",
+        ];
+        for path in allowed {
+            assert!(
+                !is_ignored_path(Path::new(path)),
+                "{path} should NOT be ignored"
+            );
+        }
+    }
+
+    #[test]
+    fn ignored_path_catches_sensitive_file_extensions() {
+        let sensitive = [
+            "config/server.key",
+            "certs/ca.pem",
+            "store/keystore.p12",
+        ];
+        for path in sensitive {
+            assert!(
+                is_ignored_path(Path::new(path)),
+                "{path} should be ignored as sensitive"
+            );
+        }
     }
 }
