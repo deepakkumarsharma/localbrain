@@ -27,7 +27,6 @@ export default function App() {
   } = useAppStore();
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [rightPanelWidth, setRightPanelWidth] = useState(450);
-  const MIN_CENTER_WIDTH = 380;
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
   const watcherUnlistenRef = useRef<(() => void) | null>(null);

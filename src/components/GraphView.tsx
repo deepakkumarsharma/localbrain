@@ -199,7 +199,7 @@ export function GraphView({ data, onSelectNode }: GraphViewProps) {
         if (!selectedNeighborhood) return 1;
         return selectedNeighborhood.has(d.id) ? 1 : 0.22;
       })
-      .text((d) => d.kindLabel);
+      .text((d) => d.kind);
 
     link.attr('opacity', (d) => {
       if (!selectedNeighborhood) return 0.7;

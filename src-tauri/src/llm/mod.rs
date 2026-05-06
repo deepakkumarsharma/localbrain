@@ -1,4 +1,7 @@
+pub mod local;
+
 use serde::Serialize;
+use tauri::Manager;
 use thiserror::Error;
 
 use crate::graph::{GraphContext, GraphStore};
@@ -35,6 +38,8 @@ pub enum LlmError {
     Search(#[from] SearchError),
     #[error("graph error: {0}")]
     Graph(#[from] crate::graph::GraphError),
+    #[error("generation error: {0}")]
+    Generation(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,8 +51,10 @@ enum QueryIntent {
 
 pub async fn ask_local(
     query: &str,
+    active_path: Option<&str>,
     metadata_store: &MetadataStore,
     graph_store: &GraphStore,
+    app: &tauri::AppHandle,
 ) -> Result<ChatAnswer, LlmError> {
     const MIN_EVIDENCE_SCORE: f32 = 0.20;
     const MIN_EVIDENCE_TEXT_SCORE: f32 = 0.04;
@@ -96,7 +103,7 @@ pub async fn ask_local(
         .iter()
         .map(citation_from_result)
         .collect::<Vec<_>>();
-    let graph_context = graph_context_for_results(graph_store, &relevant_results);
+    let graph_context = graph_context_for_results(graph_store, &relevant_results)?;
 
     if intent == QueryIntent::FileList {
         return Ok(ChatAnswer {
@@ -148,7 +155,11 @@ pub async fn ask_local(
         answer,
         citations,
         graph_context,
-        provider: "local-retrieval".to_string(),
+        provider: if used_llm {
+            "llama-cpp".to_string()
+        } else {
+            "local-retrieval".to_string()
+        },
     })
 }
 
@@ -573,7 +584,7 @@ mod tests {
     fn empty_context_returns_no_evidence_answer() {
         let answer = format_answer("router", QueryIntent::General, None, &[], &[], &[]);
 
-        assert!(answer.contains("could not find indexed evidence"));
+        assert!(answer.contains("No indexed evidence found yet"));
     }
 
     #[test]

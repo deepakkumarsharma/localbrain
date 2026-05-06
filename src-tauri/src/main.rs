@@ -22,15 +22,17 @@ use commands::{
     start_local_llm, stop_local_llm,
 };
 use settings::SettingsStore;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 use watcher::{start_watcher, WatcherState};
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(WatcherState::new())
         .manage(AgentApiState::new())
         .manage(SettingsStore::new())
+        .manage(llm::local::LocalLlmState::new())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().map_err(|_| {
                 std::io::Error::new(
@@ -46,6 +48,8 @@ fn main() {
                 metadata::MetadataStore::open_default(app.handle()),
             )?;
             app.manage(metadata_store);
+            let settings_store = app.state::<SettingsStore>();
+            settings_store.load_from_disk(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -71,9 +75,13 @@ fn main() {
             record_file_metadata,
             resolve_project_root,
             search_code,
+            get_local_llm_status,
+            set_local_model_path,
             set_provider,
             set_workspace_root,
             start_agent_api,
+            start_local_llm,
+            stop_local_llm,
             stop_agent_api,
             start_watcher
         ])

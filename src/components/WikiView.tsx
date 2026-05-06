@@ -1,4 +1,4 @@
-import { ShieldCheck } from 'lucide-react';
+import { BookText, FileCode2, ShieldCheck, Sparkles } from 'lucide-react';
 import { marked } from 'marked';
 import { useEffect, useState } from 'react';
 import { getWikiContent } from '../lib/wiki';

@@ -14,6 +14,13 @@ import {
 import { useMemo, useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import logo from '../assets/logo.png';
+import {
+  getLocalLlmStatus,
+  getProviderSettings,
+  setLocalModelPath,
+  startLocalLlm,
+  stopLocalLlm,
+} from '../lib/settings';
 import { useAppStore } from '../store/useAppStore';
 
 interface FileTreeNode {
@@ -47,6 +54,8 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
     citations,
     setActivePanel,
     setActiveSourcePath,
+    setProviderSettings,
+    setLlmRunning,
   } = useAppStore();
   const [tab, setTab] = useState<'explorer' | 'wiki' | 'sources'>('explorer');
   const [isPickingProject, setIsPickingProject] = useState(false);
@@ -59,7 +68,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
   useEffect(() => {
     void getProviderSettings().then(setProviderSettings).catch(console.error);
     void getLocalLlmStatus().then(setLlmRunning).catch(console.error);
-  }, [setProviderSettings, setLlmRunning]);
+  }, [setLlmRunning, setProviderSettings]);
 
   const pickProjectFolder = async () => {
     setIsPickingProject(true);

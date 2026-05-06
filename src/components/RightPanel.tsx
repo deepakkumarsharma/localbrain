@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Send, Settings } from 'lucide-react';
+import { marked } from 'marked';
 import { getAgentApiStatus } from '../lib/api';
 import type { ChatMessage } from '../lib/chat';
 import { askLocal } from '../lib/chat';

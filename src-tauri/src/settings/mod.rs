@@ -1,5 +1,8 @@
+mod persistence;
+
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +18,7 @@ pub enum LlmProvider {
 pub struct ProviderSettings {
     pub provider: LlmProvider,
     pub cloud_enabled: bool,
+    pub local_model_path: Option<String>,
 }
 
 pub struct SettingsStore {
@@ -27,6 +31,7 @@ impl SettingsStore {
             settings: Mutex::new(ProviderSettings {
                 provider: LlmProvider::Local,
                 cloud_enabled: false,
+                local_model_path: None,
             }),
         }
     }
@@ -50,13 +55,31 @@ impl SettingsStore {
 
     pub fn set_provider(
         &self,
+        app: &AppHandle,
         provider: LlmProvider,
         cloud_enabled: bool,
     ) -> Result<ProviderSettings, String> {
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         settings.provider = provider;
         settings.cloud_enabled = cloud_enabled && provider != LlmProvider::Local;
+        let updated = settings.clone();
+        drop(settings);
+        persistence::save_settings(app, &updated)?;
 
-        Ok(settings.clone())
+        Ok(updated)
+    }
+
+    pub fn set_local_model_path(
+        &self,
+        app: &AppHandle,
+        local_model_path: Option<String>,
+    ) -> Result<ProviderSettings, String> {
+        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
+        settings.local_model_path = local_model_path;
+        let updated = settings.clone();
+        drop(settings);
+        persistence::save_settings(app, &updated)?;
+
+        Ok(updated)
     }
 }
