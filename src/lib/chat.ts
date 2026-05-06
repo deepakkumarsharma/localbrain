@@ -26,6 +26,6 @@ export interface ChatMessage {
   status: 'complete' | 'pending' | 'error';
 }
 
-export async function askLocal(query: string) {
-  return invoke<ChatAnswer>('ask_local', { query });
+export async function askLocal(query: string, activePath?: string) {
+  return invoke<ChatAnswer>('ask_local', { query, activePath });
 }

@@ -1,7 +1,24 @@
-import { BookOpen, ChevronDown, ChevronRight, FileCode2, Folder, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  BookOpen,
+  Brain,
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  Folder,
+  Play,
+  Square,
+} from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { open } from '@tauri-apps/plugin-dialog';
 import logo from '../assets/logo.png';
 import { useAppStore } from '../store/useAppStore';
+import {
+  getProviderSettings,
+  setLocalModelPath,
+  startLocalLlm,
+  getLocalLlmStatus,
+  stopLocalLlm,
+} from '../lib/settings';
 
 interface FileTreeGroup {
   name: string;
@@ -13,12 +30,65 @@ export function Sidebar() {
     activeSourcePath,
     indexPathSummary,
     searchIndexSummary,
+    providerSettings,
+    llmRunning,
     setActivePanel,
     setActiveSourcePath,
+    setProviderSettings,
+    setLlmRunning,
   } = useAppStore();
   const [tab, setTab] = useState<'explorer' | 'wiki'>('explorer');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['root', 'src']));
   const indexedCount = searchIndexSummary?.documentsIndexed ?? indexPathSummary?.filesSeen ?? 0;
+
+  useEffect(() => {
+    void getProviderSettings().then(setProviderSettings).catch(console.error);
+    void getLocalLlmStatus().then(setLlmRunning).catch(console.error);
+  }, [setProviderSettings, setLlmRunning]);
+
+  const selectModel = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Model', extensions: ['gguf'] }],
+      });
+      if (selected && typeof selected === 'string') {
+        const settings = await setLocalModelPath(selected);
+        setProviderSettings(settings);
+      }
+    } catch (error) {
+      console.error('Failed to select model:', error);
+    }
+  };
+
+  const startServer = async () => {
+    try {
+      await startLocalLlm();
+      let running = false;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        running = await getLocalLlmStatus();
+        if (running) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      setLlmRunning(running);
+      if (!running) {
+        alert('Local server started but is not healthy yet. Please wait and try again.');
+      }
+    } catch (error) {
+      alert(`Failed to start server: ${error}`);
+    }
+  };
+
+  const stopServer = async () => {
+    try {
+      await stopLocalLlm();
+      setLlmRunning(false);
+    } catch (error) {
+      alert(`Failed to stop server: ${error}`);
+    }
+  };
 
   const toggleGroup = (name: string) => {
     const next = new Set(expandedGroups);
@@ -212,22 +282,68 @@ export function Sidebar() {
 
         {/* Fixed Metrics Section - Sticky at bottom of scrollable area */}
         <div className="sticky bottom-0 shrink-0 border-t border-app-border p-4 bg-app-panel/95 backdrop-blur-md shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.7)] z-10">
+          <div className="mb-4">
+            <div className="px-2 py-1.5 text-[11px] font-black uppercase tracking-widest text-app-muted/70 flex justify-between items-center">
+              LOCAL LLM
+              <button
+                onClick={selectModel}
+                className="text-app-accent hover:text-app-accent/80 transition-colors lowercase font-bold text-[10px]"
+              >
+                {providerSettings?.localModelPath ? '[change]' : '[select]'}
+              </button>
+            </div>
+            {providerSettings?.localModelPath ? (
+              <div className="px-2 space-y-2">
+                <div
+                  className="flex items-center gap-2 rounded-lg border border-app-border bg-app-background/50 p-2 text-[12px] font-medium text-app-text group"
+                  title={providerSettings.localModelPath}
+                >
+                  <Brain
+                    className={`h-4 w-4 shrink-0 ${llmRunning ? 'text-emerald-400' : 'text-violet-400'}`}
+                  />
+                  <span className="truncate">
+                    {providerSettings.localModelPath.split(/[/\\]/).pop()}
+                  </span>
+                  {llmRunning && (
+                    <span className="ml-auto flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                  )}
+                </div>
+                {llmRunning ? (
+                  <button
+                    onClick={stopServer}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500/10 border border-red-500/30 py-2 text-[12px] font-black text-red-400 hover:bg-red-500/20 transition-all uppercase tracking-wider"
+                  >
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                    Stop Server
+                  </button>
+                ) : (
+                  <button
+                    onClick={startServer}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 py-2 text-[12px] font-black text-emerald-400 hover:bg-emerald-500/20 transition-all uppercase tracking-wider"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    Start Local Server
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="px-2">
+                <button
+                  onClick={selectModel}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-app-border p-3 text-[12px] font-bold text-app-muted hover:border-app-accent/50 hover:text-app-text transition-all"
+                >
+                  No model selected
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="px-2 py-1.5 text-[11px] font-black uppercase tracking-widest text-app-muted/70">
             .LOCALBRAIN
           </div>
           <div className="grid grid-cols-2 gap-2 p-1">
             <Metric label="GRAPH" value={`${indexedCount || 0} nodes`} color="bg-blue-500" />
             <Metric label="WIKI" value={`${wikiItems.length} pages`} color="bg-violet-500" />
-          </div>
-          <div className="mt-3 flex h-11 items-center gap-2.5 rounded-xl border border-app-border bg-app-background px-3.5 text-app-muted hover:text-app-text hover:border-app-accent/50 transition-all cursor-pointer group shadow-inner">
-            <Search
-              className="h-5 w-5 group-hover:text-app-accent transition-colors"
-              aria-hidden="true"
-            />
-            <span className="text-[14px] font-bold">Command palette</span>
-            <kbd className="ml-auto rounded-lg border border-app-border bg-app-panelSoft px-2 py-1 font-mono text-[12px] font-bold shadow-sm">
-              ⌘K
-            </kbd>
           </div>
         </div>
       </div>

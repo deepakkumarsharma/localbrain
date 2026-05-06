@@ -3,6 +3,7 @@ import { Download, FileText, GitBranch, Search, Workflow, X } from 'lucide-react
 import { FlowView } from './FlowView';
 import { GraphView } from './GraphView';
 import { WikiView } from './WikiView';
+import type { GraphViewData } from '../lib/graph';
 import { getGraphView } from '../lib/graph';
 import { generate_wiki } from '../lib/wiki';
 import { useAppStore } from '../store/useAppStore';
@@ -95,6 +96,8 @@ export function MainPanel() {
     },
   ];
 
+  const dynamicLegendItems = buildDynamicLegend(graphView);
+
   return (
     <main className="flex min-w-0 flex-col bg-app-background">
       <div className="flex h-14 items-center justify-between border-b border-app-border bg-app-panel/80 px-4 backdrop-blur-md">
@@ -118,11 +121,9 @@ export function MainPanel() {
             ))}
           </div>
           <div className="hidden items-center gap-5 text-[12px] font-bold text-app-muted lg:flex">
-            <Legend label="Feature" color="bg-blue-400" />
-            <Legend label="Component" color="bg-violet-400" />
-            <Legend label="API" color="bg-emerald-400" />
-            <Legend label="Service" color="bg-amber-400" />
-            <Legend label="Model" color="bg-red-400" />
+            {dynamicLegendItems.map((item) => (
+              <Legend key={item.kind} label={item.label} colorVar={item.colorVar} />
+            ))}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -211,11 +212,67 @@ export function MainPanel() {
   );
 }
 
-function Legend({ label, color }: { label: string; color: string }) {
+function Legend({ label, colorVar }: { label: string; colorVar: string }) {
   return (
     <span className="flex items-center gap-2">
-      <span className={`h-2 w-2 rounded-full ${color} shadow-[0_0_8px_currentColor]`} />
+      <span
+        className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]"
+        style={{ backgroundColor: `rgb(var(${colorVar}))`, color: `rgb(var(${colorVar}))` }}
+      />
       {label}
     </span>
   );
+}
+
+const KIND_META: Record<string, { label: string; colorVar: string }> = {
+  file: { label: 'File', colorVar: '--color-app-text' },
+  component: { label: 'Component', colorVar: '--color-graph-component' },
+  import: { label: 'Import / API', colorVar: '--color-graph-api' },
+  hook: { label: 'Hook', colorVar: '--color-graph-hook' },
+  external_library: { label: 'External Lib', colorVar: '--color-graph-external' },
+  class: { label: 'Type / Model', colorVar: '--color-graph-model' },
+  interface: { label: 'Type / Model', colorVar: '--color-graph-model' },
+  type_alias: { label: 'Type / Model', colorVar: '--color-graph-model' },
+  enum: { label: 'Type / Model', colorVar: '--color-graph-model' },
+  method: { label: 'Function / Service', colorVar: '--color-graph-service' },
+  function: { label: 'Function / Service', colorVar: '--color-graph-service' },
+  object: { label: 'Feature / Object', colorVar: '--color-graph-feature' },
+  export: { label: 'Export', colorVar: '--color-graph-api' },
+};
+
+function buildDynamicLegend(graphView: GraphViewData | null) {
+  const fallbackKinds = ['component', 'import', 'hook', 'external_library', 'class', 'function'];
+
+  const kinds = new Set<string>(
+    graphView?.nodes
+      .map((node: GraphViewData['nodes'][number]) => node.kind)
+      .filter((kind: string) => kind !== 'file') ?? fallbackKinds,
+  );
+
+  const orderedKinds = [
+    'component',
+    'import',
+    'hook',
+    'external_library',
+    'class',
+    'interface',
+    'type_alias',
+    'enum',
+    'function',
+    'method',
+    'object',
+    'export',
+  ].filter((kind) => kinds.has(kind));
+
+  const dedupedByLabel = new Map<string, { kind: string; label: string; colorVar: string }>();
+  for (const kind of orderedKinds) {
+    const meta = KIND_META[kind];
+    if (!meta) continue;
+    const key = `${meta.label}-${meta.colorVar}`;
+    if (!dedupedByLabel.has(key)) {
+      dedupedByLabel.set(key, { kind, ...meta });
+    }
+  }
+
+  return Array.from(dedupedByLabel.values());
 }

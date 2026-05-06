@@ -187,12 +187,35 @@ pub async fn hybrid_search(
 #[tauri::command]
 pub async fn ask_local(
     query: String,
+    active_path: Option<String>,
+    app: tauri::AppHandle,
     metadata_store: tauri::State<'_, MetadataStore>,
     graph_store: tauri::State<'_, GraphStore>,
 ) -> Result<ChatAnswer, String> {
-    crate::llm::ask_local(&query, &metadata_store, &graph_store)
-        .await
-        .map_err(|error| error.to_string())
+    crate::llm::ask_local(
+        &query,
+        active_path.as_deref(),
+        &metadata_store,
+        &graph_store,
+        &app,
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn start_local_llm(app: tauri::AppHandle) -> Result<(), String> {
+    crate::llm::local::start_llama_server(&app).await
+}
+
+#[tauri::command]
+pub async fn stop_local_llm(app: tauri::AppHandle) -> Result<(), String> {
+    crate::llm::local::stop_llama_server(&app).await
+}
+
+#[tauri::command]
+pub async fn get_local_llm_status(app: tauri::AppHandle) -> bool {
+    crate::llm::local::get_llm_running_status(&app).await
 }
 
 #[tauri::command]
@@ -214,9 +237,19 @@ pub fn get_provider_settings(
 
 #[tauri::command]
 pub fn set_provider(
+    app: tauri::AppHandle,
     provider: LlmProvider,
     cloud_enabled: bool,
     settings_store: tauri::State<SettingsStore>,
 ) -> Result<ProviderSettings, String> {
-    settings_store.set_provider(provider, cloud_enabled)
+    settings_store.set_provider(&app, provider, cloud_enabled)
+}
+
+#[tauri::command]
+pub fn set_local_model_path(
+    app: tauri::AppHandle,
+    path: Option<String>,
+    settings_store: tauri::State<SettingsStore>,
+) -> Result<ProviderSettings, String> {
+    settings_store.set_local_model_path(&app, path)
 }

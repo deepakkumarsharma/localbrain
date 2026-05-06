@@ -1,20 +1,21 @@
 # `src/components/GraphView.tsx`
 
-16 symbols indexed.
+17 symbols indexed.
 
 ## Functions
 
-- `GraphView` at L19:8
-- `dragstarted` at L149:5
-- `dragged` at L157:5
-- `dragended` at L162:5
-- `nodeColor` at L191:1
+- `GraphView` at L20:8
+- `dragstarted` at L175:5
+- `dragged` at L183:5
+- `dragended` at L188:5
+- `nodeColor` at L217:1
+- `prettyKindLabel` at L242:1
 
 ## Interfaces
 
 - `GraphViewProps` at L5:1
 - `D3Node` at L10:1
-- `D3Link` at L14:1
+- `D3Link` at L15:1
 
 ## Imports
 
@@ -28,4 +29,4 @@
 
 ## Exports
 
-- `GraphView` at L19:1
+- `GraphView` at L20:1

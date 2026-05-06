@@ -9,8 +9,9 @@ import { useAppStore } from './store/useAppStore';
 
 export default function App() {
   const { setAppVersion, theme, toggleTheme, setIndexPathResult } = useAppStore();
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [rightPanelWidth, setRightPanelWidth] = useState(450);
+  const MIN_CENTER_WIDTH = 380;
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
 
@@ -80,15 +81,25 @@ export default function App() {
     document.body.style.userSelect = '';
   }, []);
 
-  const resize = useCallback((e: MouseEvent) => {
-    if (isResizingSidebar.current) {
-      const newWidth = Math.min(Math.max(200, e.clientX), 400);
-      setSidebarWidth(newWidth);
-    } else if (isResizingRightPanel.current) {
-      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
-      setRightPanelWidth(newWidth);
-    }
-  }, []);
+  const resize = useCallback(
+    (e: MouseEvent) => {
+      if (isResizingSidebar.current) {
+        const maxCombined = Math.max(window.innerWidth - MIN_CENTER_WIDTH, 0);
+        const panelMax = Math.min(500, maxCombined - rightPanelWidth);
+        const newWidth = Math.min(Math.max(300, e.clientX), Math.max(300, panelMax));
+        setSidebarWidth(newWidth);
+      } else if (isResizingRightPanel.current) {
+        const maxCombined = Math.max(window.innerWidth - MIN_CENTER_WIDTH, 0);
+        const panelMax = Math.min(600, maxCombined - sidebarWidth);
+        const newWidth = Math.min(
+          Math.max(300, window.innerWidth - e.clientX),
+          Math.max(300, panelMax),
+        );
+        setRightPanelWidth(newWidth);
+      }
+    },
+    [rightPanelWidth, sidebarWidth],
+  );
 
   useEffect(() => {
     window.addEventListener('mousemove', resize);

@@ -9,6 +9,7 @@ interface GraphViewProps {
 
 interface D3Node extends GraphViewNode, d3.SimulationNodeDatum {
   color: string;
+  kindLabel: string;
 }
 
 interface D3Link extends d3.SimulationLinkDatum<D3Node> {
@@ -62,6 +63,7 @@ export function GraphView({ data, onSelectNode }: GraphViewProps) {
     const nodes: D3Node[] = data.nodes.map((node) => ({
       ...node,
       color: nodeColor(node.kind),
+      kindLabel: prettyKindLabel(node.kind),
     }));
 
     const links: D3Link[] = data.edges.map((edge) => ({
@@ -140,15 +142,24 @@ export function GraphView({ data, onSelectNode }: GraphViewProps) {
 
     node
       .append('text')
-      .attr('y', (d) => (d.kind === 'file' ? 45 : 40))
+      .attr('y', (d) => (d.kind === 'file' ? 42 : 38))
       .attr('text-anchor', 'middle')
-      .attr('font-size', '11px')
-      .attr('font-weight', 'bold')
+      .attr('font-size', '10px')
+      .attr('font-weight', '700')
       .attr('fill', 'rgb(var(--color-app-text))')
       .text((d) => {
         const label = d.kind === 'file' ? d.label.split('/').pop() || d.label : d.label;
-        return label.length > 20 ? label.slice(0, 17) + '...' : label;
+        return label.length > 18 ? label.slice(0, 15) + '...' : label;
       });
+
+    node
+      .append('text')
+      .attr('y', (d) => (d.kind === 'file' ? 56 : 51))
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '9px')
+      .attr('font-weight', '600')
+      .attr('fill', 'rgb(var(--color-app-muted))')
+      .text((d) => d.kindLabel);
 
     // Simulation tick
     simulation.on('tick', () => {
@@ -213,6 +224,12 @@ function nodeColor(kind: string) {
   if (kind === 'import' || kind === 'export') {
     return 'rgb(var(--color-graph-api))';
   }
+  if (kind === 'external_library') {
+    return 'rgb(var(--color-graph-external))';
+  }
+  if (kind === 'hook') {
+    return 'rgb(var(--color-graph-hook))';
+  }
   if (kind === 'class' || kind === 'interface' || kind === 'type_alias') {
     return 'rgb(var(--color-graph-model))';
   }
@@ -220,4 +237,33 @@ function nodeColor(kind: string) {
     return 'rgb(var(--color-graph-service))';
   }
   return 'rgb(var(--color-graph-feature))';
+}
+
+function prettyKindLabel(kind: string) {
+  switch (kind) {
+    case 'file':
+      return 'File';
+    case 'component':
+      return 'Component';
+    case 'import':
+      return 'Import';
+    case 'external_library':
+      return 'External';
+    case 'export':
+      return 'Export';
+    case 'hook':
+      return 'Hook';
+    case 'class':
+      return 'Class';
+    case 'interface':
+      return 'Interface';
+    case 'type_alias':
+      return 'Type';
+    case 'method':
+      return 'Method';
+    case 'function':
+      return 'Function';
+    default:
+      return 'Symbol';
+  }
 }

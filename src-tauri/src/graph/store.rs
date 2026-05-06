@@ -348,12 +348,13 @@ impl GraphStore {
 
         for symbol in symbols.into_iter().take(normalized_limit) {
             let symbol_node_id = symbol_id(path, &symbol);
+            let symbol_kind = visual_kind_for_symbol(&symbol);
 
             if !seen_ids.contains(&symbol_node_id) {
                 nodes.push(GraphViewNode {
                     id: symbol_node_id.clone(),
                     label: symbol.name.clone(),
-                    kind: kind_label(symbol.kind).to_string(),
+                    kind: symbol_kind.clone(),
                 });
                 seen_ids.insert(symbol_node_id.clone());
             }
@@ -368,7 +369,7 @@ impl GraphStore {
             // If it's an import, try to find the matching file or symbol
             if symbol.kind == SymbolKind::Import {
                 if let Some(source) = &symbol.source {
-                    // Basic heuristic: if source matches a file path exactly or with extension
+                    // Basic heuristic: if source matches a local file path exactly or with extension
                     let possible_paths = vec![
                         source.clone(),
                         format!("{source}.ts"),
@@ -379,6 +380,7 @@ impl GraphStore {
                         format!("src/{source}.tsx"),
                     ];
 
+                    let mut linked_local_file = false;
                     for p in possible_paths {
                         if self.file_exists(&p)? {
                             if !seen_ids.contains(&p) {
@@ -395,8 +397,28 @@ impl GraphStore {
                                 target: p,
                                 label: "imports".to_string(),
                             });
+                            linked_local_file = true;
                             break;
                         }
+                    }
+
+                    // Unresolved import path is likely an external package/library.
+                    if !linked_local_file {
+                        let external_id = format!("lib::{source}");
+                        if !seen_ids.contains(&external_id) {
+                            nodes.push(GraphViewNode {
+                                id: external_id.clone(),
+                                label: source.clone(),
+                                kind: "external_library".to_string(),
+                            });
+                            seen_ids.insert(external_id.clone());
+                        }
+                        edges.push(GraphViewEdge {
+                            id: format!("{symbol_node_id}->{external_id}"),
+                            source: symbol_node_id.clone(),
+                            target: external_id,
+                            label: "imports".to_string(),
+                        });
                     }
                 }
             }
@@ -479,6 +501,25 @@ impl GraphStore {
             None => Ok(0),
         }
     }
+}
+
+fn visual_kind_for_symbol(symbol: &CodeSymbol) -> String {
+    if symbol.kind == SymbolKind::Import {
+        return "import".to_string();
+    }
+
+    if symbol.kind == SymbolKind::Function
+        && symbol.name.starts_with("use")
+        && symbol
+            .name
+            .chars()
+            .nth(3)
+            .is_some_and(|character| character.is_ascii_uppercase())
+    {
+        return "hook".to_string();
+    }
+
+    kind_label(symbol.kind).to_string()
 }
 
 fn current_timestamp() -> Result<String, GraphError> {

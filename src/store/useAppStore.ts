@@ -44,6 +44,7 @@ interface AppState {
   citations: Citation[];
   providerSettings: ProviderSettings | null;
   agentApiStatus: AgentApiStatus | null;
+  llmRunning: boolean;
   setActivePanel: (panel: ActivePanel) => void;
   setAppVersion: (version: string) => void;
   setTheme: (theme: Theme) => void;
@@ -74,12 +75,13 @@ interface AppState {
   setCitations: (citations: Citation[]) => void;
   setProviderSettings: (settings: ProviderSettings) => void;
   setAgentApiStatus: (status: AgentApiStatus) => void;
+  setLlmRunning: (running: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   activePanel: 'graph',
   appVersion: 'loading',
-  theme: 'dark',
+  theme: 'light',
   activeSourcePath: '',
   lastFileChange: null,
   lastFileChangeAt: null,
@@ -108,6 +110,7 @@ export const useAppStore = create<AppState>((set) => ({
   citations: [],
   providerSettings: null,
   agentApiStatus: null,
+  llmRunning: false,
   setActivePanel: (panel) => set({ activePanel: panel }),
   setAppVersion: (version) => set({ appVersion: version }),
   setTheme: (theme) => set({ theme }),
@@ -166,4 +169,5 @@ export const useAppStore = create<AppState>((set) => ({
   setCitations: (citations) => set({ citations }),
   setProviderSettings: (settings) => set({ providerSettings: settings }),
   setAgentApiStatus: (status) => set({ agentApiStatus: status }),
+  setLlmRunning: (running) => set({ llmRunning: running }),
 }));
