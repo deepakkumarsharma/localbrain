@@ -530,12 +530,23 @@ fn is_grounded_summary(summary: &str, citations: &[Citation]) -> bool {
     citations.iter().take(3).any(|citation| {
         let path = citation.path.to_lowercase();
         let file_name = path.rsplit('/').next().unwrap_or(path.as_str());
-        lower.contains(file_name)
-            || citation
-                .snippet
-                .split_whitespace()
-                .take(10)
-                .any(|token| token.len() > 4 && lower.contains(&token.to_lowercase()))
+        if lower.contains(file_name) {
+            return true;
+        }
+
+        let mut distinct_matches = std::collections::BTreeSet::new();
+        for token in citation.snippet.split_whitespace().take(10) {
+            if token.len() <= 4 {
+                continue;
+            }
+            let normalized = token
+                .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '/')
+                .to_lowercase();
+            if normalized.len() > 4 && lower.contains(&normalized) {
+                distinct_matches.insert(normalized);
+            }
+        }
+        distinct_matches.len() >= 2
     })
 }
 

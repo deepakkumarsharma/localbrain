@@ -208,5 +208,7 @@ export const useAppStore = create<AppState>((set) => ({
       citations: [],
       chatMessages: [],
       chatError: null,
+      lastFileChange: '',
+      lastFileChangeAt: null,
     }),
 }));

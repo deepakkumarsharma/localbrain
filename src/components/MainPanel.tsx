@@ -143,7 +143,7 @@ export function MainPanel() {
             ) : (
               <Download className="h-4 w-4" aria-hidden="true" />
             )}
-            {isProjectLoading ? 'Loading Project' : 'Export Wiki'}
+            {isProjectLoading ? 'Export Wiki (loading...)' : 'Export Wiki'}
           </button>
           <button
             className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"

@@ -25,16 +25,20 @@ export function WikiView() {
 
     const rawHtml = marked.parse(content, { async: false }) as string;
     const outlineItems: Array<{ title: string; level: number; id: string }> = [];
-    const withAnchors = rawHtml.replace(
-      /<(h[1-3])>(.*?)<\/h[1-3]>/g,
-      (_full: string, tag: string, inner: string) => {
-        const plain = stripTags(inner).trim();
-        const slug = headingSlug(plain);
-        const level = Number(tag.slice(1));
-        outlineItems.push({ title: plain, level, id: slug });
-        return `<${tag} id="${slug}">${inner}</${tag}>`;
-      },
-    );
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rawHtml, 'text/html');
+    const slugCounts = new Map<string, number>();
+    doc.querySelectorAll('h1,h2,h3').forEach((el) => {
+      const plain = stripTags(el.textContent || '').trim();
+      const baseSlug = headingSlug(plain);
+      const currentCount = slugCounts.get(baseSlug) ?? 0;
+      const nextCount = currentCount + 1;
+      slugCounts.set(baseSlug, nextCount);
+      const uniqueSlug = nextCount > 1 ? `${baseSlug}-${nextCount}` : baseSlug;
+      el.id = uniqueSlug;
+      outlineItems.push({ title: plain, level: Number(el.tagName.slice(1)), id: uniqueSlug });
+    });
+    const withAnchors = doc.body.innerHTML;
     const processedHtml = withAnchors.replace(/\[\[([^\]]+)\]\]/g, (_, capture: string) => {
       const escaped = escapeHtml(capture.trim());
       return `<button type="button" class="wikilink" data-node="${escaped}">${escaped}</button>`;

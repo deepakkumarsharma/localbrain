@@ -107,7 +107,7 @@ export function RightPanel() {
         await new Promise((resolve) => setTimeout(resolve, 600));
       }
 
-      const answer = await askLocal(trimmed);
+      const answer = await askLocal(trimmed, activeSourcePath);
       setCitations(answer.citations);
       setGraphContext(answer.graphContext);
       replaceChatMessage(pendingId, {

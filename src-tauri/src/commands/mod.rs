@@ -284,11 +284,15 @@ pub fn resolve_project_root(path: String) -> Result<String, String> {
         return Err("selected path is not a directory".to_string());
     }
 
+    let home_dir = std::env::var_os("HOME").map(PathBuf::from);
     let selected_score = score_project_root_candidate(&canonical);
     let mut best = canonical.clone();
     let mut best_score = selected_score;
 
-    for ancestor in canonical.ancestors().take(7) {
+    for ancestor in canonical.ancestors().take(MAX_ANCESTOR_DEPTH) {
+        if home_dir.as_deref() == Some(ancestor) {
+            break;
+        }
         if !ancestor.is_dir() {
             continue;
         }
@@ -302,7 +306,10 @@ pub fn resolve_project_root(path: String) -> Result<String, String> {
     let should_promote =
         best != canonical && (best_score >= selected_score + 40 || is_suspicious_leaf(&canonical));
 
-    if should_promote {
+    if should_promote
+        && !is_git_only_candidate(&best)
+        && home_dir.as_deref() != Some(best.as_path())
+    {
         Ok(best.to_string_lossy().to_string())
     } else {
         Ok(canonical.to_string_lossy().to_string())
@@ -328,18 +335,7 @@ fn score_project_root_candidate(path: &Path) -> i32 {
         score += 100;
     }
 
-    for marker in [
-        "package.json",
-        "go.mod",
-        "Cargo.toml",
-        "pyproject.toml",
-        "requirements.txt",
-        "setup.py",
-        "Gemfile",
-        "pom.xml",
-        "build.gradle",
-        "build.gradle.kts",
-    ] {
+    for marker in PROJECT_MARKERS {
         if path.join(marker).exists() {
             score += 30;
         }
@@ -350,6 +346,14 @@ fn score_project_root_candidate(path: &Path) -> i32 {
     }
 
     score
+}
+
+fn is_git_only_candidate(path: &Path) -> bool {
+    path.join(".git").exists()
+        && !PROJECT_MARKERS
+            .iter()
+            .any(|marker| path.join(marker).exists())
+        && !path.join("README.md").exists()
 }
 
 fn is_suspicious_leaf(path: &Path) -> bool {
@@ -377,3 +381,16 @@ fn is_suspicious_name(name: &str) -> bool {
             | "node_modules"
     )
 }
+const MAX_ANCESTOR_DEPTH: usize = 7;
+const PROJECT_MARKERS: [&str; 10] = [
+    "package.json",
+    "go.mod",
+    "Cargo.toml",
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.py",
+    "Gemfile",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+];

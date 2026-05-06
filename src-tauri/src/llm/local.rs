@@ -1,6 +1,7 @@
 use crate::settings::SettingsStore;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -171,11 +172,16 @@ fn spawn_log_drain(mut rx: Receiver<CommandEvent>, terminated_tx: watch::Sender<
     });
 }
 
-fn validate_llama_runtime_files() -> Result<(), String> {
-    let cwd = std::env::current_dir().map_err(|e| format!("Failed to read current dir: {e}"))?;
-    let binaries_dir = cwd.join("src-tauri").join("binaries");
+fn validate_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
+    let binaries_dir = app
+        .path()
+        .resolve("binaries", BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to resolve local AI runtime directory: {e}"))?;
     if !binaries_dir.exists() {
-        return Ok(());
+        return Err(format!(
+            "Missing local AI runtime directory: {}. Reinstall the app or run the documented installer.",
+            binaries_dir.display()
+        ));
     }
 
     let required = [
@@ -209,15 +215,20 @@ fn validate_llama_runtime_files() -> Result<(), String> {
     Ok(())
 }
 
-fn repair_llama_runtime_files() -> Result<(), String> {
+fn repair_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| format!("Failed to read current dir: {e}"))?;
     let src_dir = cwd.join("src-tauri").join("target").join("debug");
-    let dst_dir = cwd.join("src-tauri").join("binaries");
+    let dst_dir = app
+        .path()
+        .resolve("binaries", BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to resolve runtime destination directory: {e}"))?;
 
     if !src_dir.exists() || !dst_dir.exists() {
-        return Err(
-            "Local AI runtime repair source/destination directories are missing.".to_string(),
-        );
+        return Err(format!(
+            "Local AI runtime repair directories are missing. source={} destination={}",
+            src_dir.display(),
+            dst_dir.display()
+        ));
     }
 
     let entries = std::fs::read_dir(&src_dir)
@@ -245,14 +256,22 @@ fn repair_llama_runtime_files() -> Result<(), String> {
 }
 
 pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
-    if let Err(initial_error) = validate_llama_runtime_files() {
-        eprintln!("[llama] Runtime validation failed: {initial_error}. Attempting auto-repair...");
-        repair_llama_runtime_files()?;
-        validate_llama_runtime_files().map_err(|post_repair_error| {
-            format!(
-                "{post_repair_error} Auto-repair attempted but failed verification. Run `npm run llm:repair`."
-            )
-        })?;
+    if let Err(initial_error) = validate_llama_runtime_files(app) {
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "[llama] Runtime validation failed: {initial_error}. Attempting auto-repair..."
+            );
+            repair_llama_runtime_files(app)?;
+            validate_llama_runtime_files(app).map_err(|post_repair_error| {
+                format!(
+                    "{post_repair_error} Auto-repair attempted but failed verification. Run `npm run llm:repair`."
+                )
+            })?;
+        } else {
+            return Err(format!(
+                "{initial_error} Please reinstall Localbrain or run the documented runtime installer."
+            ));
+        }
     }
 
     let state = app.state::<LocalLlmState>();
