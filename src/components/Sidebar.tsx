@@ -89,6 +89,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
 
   const selectModel = async () => {
     try {
+      setServerStatus('Opening model picker...');
       const selected = await open({
         multiple: false,
         filters: [{ name: 'Model', extensions: ['gguf'] }],
@@ -96,17 +97,39 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
       if (selected && typeof selected === 'string') {
         const settings = await setLocalModelPath(selected);
         setProviderSettings(settings);
+        setServerStatus(`Model selected: ${selected.split(/[/\\]/).pop()}`);
+      } else {
+        setServerStatus('Model selection cancelled.');
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setServerStatus(`Failed to select model: ${message}`);
       console.error('Failed to select model:', error);
     }
   };
 
   const startServer = async () => {
+    if (!providerSettings?.localModelPath) {
+      setServerStatus('Select a GGUF model first.');
+      return;
+    }
     setIsStartingServer(true);
     setServerStatus('Starting local server...');
     try {
-      await startLocalLlm();
+      await Promise.race([
+        startLocalLlm(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'Startup timeout: local server did not become ready in time. Try a smaller model or restart.',
+                ),
+              ),
+            70000,
+          ),
+        ),
+      ]);
       let running = false;
       for (let attempt = 0; attempt < 40; attempt += 1) {
         running = await getLocalLlmStatus();
@@ -122,7 +145,8 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
         setServerStatus('Local server is ready.');
       }
     } catch (error) {
-      setServerStatus(`Failed to start server: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      setServerStatus(`Failed to start server: ${message}`);
     } finally {
       setIsStartingServer(false);
     }
@@ -248,8 +272,13 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
           )}
           {projectPath ? (
             <div className="rounded-lg border border-app-border bg-app-background p-2.5">
-              <div className="text-[10px] font-black uppercase tracking-widest text-app-muted">
-                Active Workspace
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] font-black uppercase tracking-widest text-app-muted">
+                  Active Workspace
+                </div>
+                <span className="rounded-full border border-app-border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-app-muted">
+                  Hover path
+                </span>
               </div>
               <div
                 className="mt-1 truncate font-mono text-[12px] text-app-text"
@@ -407,13 +436,37 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                 ))}
                 {fileTree.length === 0 && (
                   <div className="p-6 text-center text-app-muted font-medium">
-                    {projectPath
-                      ? isProjectLoading
-                        ? 'Loading project and building wiki...'
-                        : explorerQuery.trim()
-                          ? 'No files match your search.'
-                          : 'No indexed files yet.'
-                      : 'Select a project folder to begin.'}
+                    {projectPath && isProjectLoading ? (
+                      <div className="rounded-xl border border-app-border bg-app-background p-4">
+                        <div className="mb-3 flex items-center justify-center gap-2">
+                          <img
+                            src={logo}
+                            alt="Loading Local Brain"
+                            className="h-8 w-8 rounded-md object-contain loader-logo-pulse"
+                          />
+                          <span className="text-[12px] font-black uppercase tracking-wider text-app-text">
+                            Loading Project
+                          </span>
+                        </div>
+                        <div className="mb-2 h-2 overflow-hidden rounded-full bg-app-panelSoft">
+                          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-400 via-violet-400 to-emerald-400 flow-loader-track" />
+                        </div>
+                        <div className="text-[11px] text-app-muted">
+                          {projectStatus || 'Loading project and building wiki...'}
+                        </div>
+                        <div className="mt-1 truncate font-mono text-[10px] text-app-muted/90">
+                          {projectPath}
+                        </div>
+                      </div>
+                    ) : (
+                      <span>
+                        {projectPath
+                          ? explorerQuery.trim()
+                            ? 'No files match your search.'
+                            : 'No indexed files yet.'
+                          : 'Select a project folder to begin.'}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -476,7 +529,14 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
 
         {/* Fixed Metrics Section - Sticky at bottom of scrollable area */}
         <div className="sticky bottom-0 shrink-0 border-t border-app-border p-4 bg-app-panel/95 backdrop-blur-md shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.7)] z-10">
-          <div className="mb-3 rounded-xl border border-app-border bg-app-background p-3">
+          <div className="px-2 py-1.5 text-[11px] font-black uppercase tracking-widest text-app-muted/70">
+            .LOCALBRAIN
+          </div>
+          <div className="grid grid-cols-2 gap-2 p-1">
+            <Metric label="GRAPH" value={`${indexedCount || 0} nodes`} color="bg-blue-500" />
+            <Metric label="WIKI" value={`${wikiItems.length} pages`} color="bg-violet-500" />
+          </div>
+          <div className="mt-3 rounded-xl border border-app-border bg-app-background p-3">
             <div className="mb-2 flex items-center justify-between text-[11px] font-black uppercase tracking-widest text-app-muted">
               Theme
               <button
@@ -494,23 +554,6 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
             <div className="text-[11px] font-medium text-app-muted">
               Shortcut: Cmd/Ctrl + Shift + T
             </div>
-          </div>
-          <div className="px-2 py-1.5 text-[11px] font-black uppercase tracking-widest text-app-muted/70">
-            .LOCALBRAIN
-          </div>
-          <div className="grid grid-cols-2 gap-2 p-1">
-            <Metric label="GRAPH" value={`${indexedCount || 0} nodes`} color="bg-blue-500" />
-            <Metric label="WIKI" value={`${wikiItems.length} pages`} color="bg-violet-500" />
-          </div>
-          <div className="mt-3 flex h-11 items-center gap-2.5 rounded-xl border border-app-border bg-app-background px-3.5 text-app-muted hover:text-app-text hover:border-app-accent/50 transition-all cursor-pointer group shadow-inner">
-            <Search
-              className="h-5 w-5 group-hover:text-app-accent transition-colors"
-              aria-hidden="true"
-            />
-            <span className="text-[14px] font-bold">Command palette</span>
-            <kbd className="ml-auto rounded-lg border border-app-border bg-app-panelSoft px-2 py-1 font-mono text-[12px] font-bold shadow-sm">
-              ⌘K
-            </kbd>
           </div>
         </div>
       </div>

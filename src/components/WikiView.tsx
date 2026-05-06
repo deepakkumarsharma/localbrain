@@ -196,24 +196,6 @@ export function WikiView() {
             ) : null}
           </div>
         </div>
-
-        {content ? (
-          <article
-            className="wiki-content prose prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: html }}
-            onClick={handleWikiClick}
-          />
-        ) : (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-app-muted mb-4">No wiki page found for this file.</p>
-            <button
-              className="px-4 py-2 rounded-lg bg-app-accent hover:bg-app-accentSoft text-white text-sm font-medium transition-colors"
-              onClick={() => setActivePanel('graph')}
-            >
-              Generate Wiki via Command Palette (⌘K)
-            </button>
-          </div>
-        )}
       </div>
       <style>{`
         .wiki-markdown {

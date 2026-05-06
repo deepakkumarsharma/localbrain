@@ -28,6 +28,8 @@ use watcher::{start_watcher, WatcherState};
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(WatcherState::new())
         .manage(AgentApiState::new())
@@ -93,10 +95,6 @@ fn main() {
             let llm_state = app_handle.state::<llm::local::LocalLlmState>();
             if let Err(error) = llm_state.kill_child_if_running() {
                 eprintln!("Failed to stop llama-server on app exit: {error}");
-            }
-            let settings_store = app_handle.state::<SettingsStore>();
-            if let Err(error) = settings_store.set_local_model_path(app_handle, None) {
-                eprintln!("Failed to clear local model path on app exit: {error}");
             }
         }
     });

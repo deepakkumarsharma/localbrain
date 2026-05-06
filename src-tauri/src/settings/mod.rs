@@ -37,10 +37,7 @@ impl SettingsStore {
     }
 
     pub fn load_from_disk(&self, app: &AppHandle) {
-        let mut loaded = persistence::load_settings(app);
-        // Local model selection is session-only; clear it on every app boot.
-        loaded.local_model_path = None;
-        let _ = persistence::save_settings(app, &loaded);
+        let loaded = persistence::load_settings(app);
         if let Ok(mut settings) = self.settings.lock() {
             *settings = loaded;
         }

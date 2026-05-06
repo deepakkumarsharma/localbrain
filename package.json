@@ -13,7 +13,8 @@
     "master-check": "npm run format && cd src-tauri && cargo fmt && cargo clippy -- -D warnings && cargo test && cd .. && npm run build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "tauri dev",
+    "llm:repair": "bash scripts/repair-local-llm.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.0",

@@ -17,7 +17,6 @@ export function RightPanel() {
     agentApiStatus,
     appVersion,
     chatMessages,
-    citations,
     graphContext,
     selectedGraphNode,
     providerSettings,
@@ -136,6 +135,20 @@ export function RightPanel() {
   const focusedKind = projectPath ? (selectedGraphNode?.kind ?? 'Feature') : 'Idle';
   const isLocalReady = Boolean(providerSettings?.localModelPath) && llmRunning;
   const canAskLocalBrain = Boolean(projectPath) && !isAsking;
+  const dependentCount = graphContext.length;
+  const exportCount = Math.max(
+    0,
+    graphContext.filter((item) => item.relation.toLowerCase().includes('contains')).length,
+  );
+  const summaryText = projectPath
+    ? activeSourcePath
+      ? `Indexed context for ${sourceFileName(activeSourcePath)} is available with ${dependentCount} related symbols.`
+      : 'Select a file to see enriched graph details.'
+    : 'Load a project to build enriched node context.';
+  const purposeText = activeSourcePath
+    ? inferPurposeFromPath(activeSourcePath)
+    : 'No active file selected';
+  const complexity = dependentCount > 8 ? 'High' : dependentCount > 3 ? 'Medium' : 'Low';
   return (
     <aside className="flex h-full min-w-0 flex-col border-l border-app-border bg-app-panel">
       <div className="border-b border-app-border p-4">
@@ -158,15 +171,27 @@ export function RightPanel() {
         </div>
         <div className="space-y-2.5 text-[14px] font-medium">
           <InfoRow label="File" value={projectPath ? activeSourcePath || '-' : '-'} mono />
-          <InfoRow
-            label="References"
-            value={projectPath ? String(graphContext.length || citations.length || 0) : '0'}
-          />
+          <InfoRow label="Dependents" value={projectPath ? String(dependentCount) : '0'} />
           <InfoRow
             label="Provider"
             value={`${providerSettings?.provider ?? 'local'} · cloud ${providerSettings?.cloudEnabled ? 'on' : 'off'}`}
           />
           <InfoRow label="Version" value={appVersion} />
+        </div>
+        <div className="rounded-xl border border-app-border bg-app-background p-3">
+          <div className="mb-2 text-[11px] font-black uppercase tracking-widest text-app-muted">
+            Knowledge Graph Enrichment
+          </div>
+          <div className="space-y-1.5 text-[12px]">
+            <InfoRow label="Status" value={projectPath ? 'In progress' : 'Not started'} />
+            <InfoRow label="Summary" value={summaryText} />
+            <InfoRow label="Exports" value={String(exportCount)} />
+            <InfoRow label="Dependents" value={String(dependentCount)} />
+            <InfoRow label="Last Author" value="Pending git integration" />
+            <InfoRow label="Complexity" value={complexity} />
+            <InfoRow label="Test Status" value="Pending coverage mapping" />
+            <InfoRow label="Purpose" value={purposeText} />
+          </div>
         </div>
         <div>
           <div className="mb-2 text-[11px] font-black tracking-widest text-app-muted">
@@ -312,15 +337,24 @@ export function RightPanel() {
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex justify-between gap-4">
+    <div className="flex items-start justify-between gap-4">
       <span className="text-app-muted font-bold text-[12px] uppercase tracking-wider">{label}</span>
       <span
-        className={`truncate text-right text-app-text ${mono ? 'font-mono text-[13px]' : 'font-bold'}`}
+        className={`max-w-[70%] text-right text-app-text ${mono ? 'truncate font-mono text-[13px]' : 'whitespace-normal break-words font-bold text-[12px]'}`}
       >
         {value}
       </span>
     </div>
   );
+}
+
+function inferPurposeFromPath(path: string) {
+  const lower = path.toLowerCase();
+  if (lower.includes('workflow') || lower.includes('github')) return 'Automation / CI behavior';
+  if (lower.includes('test')) return 'Validation and quality checks';
+  if (lower.includes('component')) return 'UI rendering and interaction';
+  if (lower.includes('parser') || lower.includes('index')) return 'Code intelligence and indexing';
+  return 'General project logic';
 }
 
 function sourceFileName(path: string) {

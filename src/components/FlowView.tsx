@@ -46,6 +46,17 @@ export function FlowView() {
             Localbrain Request Flow
           </h2>
           <div className="rounded-xl border border-app-border bg-app-panel p-5 text-sm text-app-muted">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-blue-400 animate-pulse" />
+              <span className="h-2.5 w-2.5 rounded-full bg-violet-400 animate-pulse [animation-delay:180ms]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse [animation-delay:360ms]" />
+              <span className="text-[12px] font-black uppercase tracking-widest text-app-muted">
+                Processing Workspace
+              </span>
+            </div>
+            <div className="mb-3 h-2 overflow-hidden rounded-full bg-app-background">
+              <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-400 via-violet-400 to-emerald-400 flow-loader-track" />
+            </div>
             {projectStatus ?? 'Project is loading...'}
           </div>
         </div>
@@ -140,12 +151,17 @@ export function FlowView() {
         </div>
         <section className="min-w-0">
           <div className="relative">
-            <div className="absolute bottom-6 left-[27px] top-6 w-px bg-gradient-to-b from-app-border via-app-muted/25 to-app-border" />
+            <div className="absolute bottom-6 left-[27px] top-6 w-px overflow-hidden rounded-full bg-gradient-to-b from-app-border via-app-muted/25 to-app-border">
+              <span className="flow-line-shot absolute left-0 top-0 h-10 w-full bg-gradient-to-b from-transparent via-blue-400 to-transparent opacity-90" />
+              <span className="flow-line-shot-delay absolute left-0 top-0 h-10 w-full bg-gradient-to-b from-transparent via-violet-400 to-transparent opacity-85" />
+            </div>
             <div className="relative space-y-8">
               {steps.map((step, index) => (
                 <div key={step.title} className="relative flex items-start gap-4">
                   <div
-                    className="relative z-10 flex h-[54px] w-[54px] items-center justify-center rounded-full border"
+                    className={`relative z-10 flex h-[54px] w-[54px] items-center justify-center rounded-full border ${
+                      step.state === 'done' ? 'flow-node-pulse' : ''
+                    }`}
                     style={{
                       backgroundColor: 'rgb(var(--color-app-panel-soft))',
                       borderColor: step.color,
