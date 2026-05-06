@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -8,15 +9,15 @@ use sqlx::{Row, SqlitePool};
 use thiserror::Error;
 
 use super::schema::{
-    CREATE_EMBEDDINGS_TABLE, CREATE_FILES_TABLE, CREATE_INDEX_RUNS_TABLE,
-    CREATE_SEARCH_DOCUMENTS_TABLE,
+    CREATE_CHUNK_EMBEDDINGS_TABLE, CREATE_EMBEDDINGS_TABLE, CREATE_FILES_TABLE,
+    CREATE_INDEX_RUNS_TABLE, CREATE_SEARCH_CHUNKS_TABLE, CREATE_SEARCH_DOCUMENTS_TABLE,
 };
 use super::types::{FileChangeStatus, FileMetadata, IndexRunSummary};
 
 #[derive(Clone)]
 pub struct MetadataStore {
     pool: SqlitePool,
-    workspace_root: PathBuf,
+    workspace_root: Arc<RwLock<PathBuf>>,
 }
 
 #[derive(Debug, Error)]
@@ -68,7 +69,7 @@ impl MetadataStore {
             .await?;
         let store = Self {
             pool,
-            workspace_root,
+            workspace_root: Arc::new(RwLock::new(workspace_root)),
         };
         store.init_schema().await?;
 
@@ -100,7 +101,13 @@ impl MetadataStore {
         sqlx::query(CREATE_SEARCH_DOCUMENTS_TABLE)
             .execute(&self.pool)
             .await?;
+        sqlx::query(CREATE_SEARCH_CHUNKS_TABLE)
+            .execute(&self.pool)
+            .await?;
         sqlx::query(CREATE_EMBEDDINGS_TABLE)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(CREATE_CHUNK_EMBEDDINGS_TABLE)
             .execute(&self.pool)
             .await?;
 
@@ -109,14 +116,19 @@ impl MetadataStore {
 
     pub fn resolve_path(&self, path: impl AsRef<Path>) -> Result<PathBuf, MetadataError> {
         let path = path.as_ref();
+        let workspace_root = self
+            .workspace_root
+            .read()
+            .map_err(|_| MetadataError::InvalidPath("workspace_root_lock".to_string()))?
+            .clone();
         let candidate = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            self.workspace_root.join(path)
+            workspace_root.join(path)
         };
         let resolved = canonicalize_for_workspace_check(&candidate)?;
 
-        if resolved == self.workspace_root || resolved.starts_with(&self.workspace_root) {
+        if resolved == workspace_root || resolved.starts_with(&workspace_root) {
             return Ok(resolved);
         }
 
@@ -126,7 +138,23 @@ impl MetadataStore {
     }
 
     pub fn normalize_path(&self, path: impl AsRef<Path>) -> String {
-        normalize_display_path(path.as_ref(), &self.workspace_root)
+        let workspace_root = self
+            .workspace_root
+            .read()
+            .ok()
+            .map(|root| root.clone())
+            .unwrap_or_else(project_root);
+        normalize_display_path(path.as_ref(), &workspace_root)
+    }
+
+    pub fn set_workspace_root(&self, path: impl AsRef<Path>) -> Result<String, MetadataError> {
+        let canonical = canonicalize_existing_dir(path.as_ref())?;
+        let mut root = self
+            .workspace_root
+            .write()
+            .map_err(|_| MetadataError::InvalidPath("workspace_root_lock".to_string()))?;
+        *root = canonical.clone();
+        Ok(canonical.to_string_lossy().to_string())
     }
 
     pub(crate) fn pool(&self) -> &SqlitePool {
@@ -431,10 +459,34 @@ fn timestamp_from_system_time(time: SystemTime) -> String {
 
 fn language_from_path(path: &Path) -> Option<&'static str> {
     match path.extension().and_then(|extension| extension.to_str()) {
-        Some("js") => Some("javascript"),
+        Some("js") | Some("mjs") | Some("cjs") => Some("javascript"),
         Some("jsx") => Some("jsx"),
-        Some("ts") => Some("typescript"),
+        Some("ts") | Some("mts") | Some("cts") => Some("typescript"),
         Some("tsx") => Some("tsx"),
+        Some("rs") => Some("rust"),
+        Some("go") => Some("go"),
+        Some("py") => Some("python"),
+        Some("java") => Some("java"),
+        Some("kt") | Some("kts") => Some("kotlin"),
+        Some("swift") => Some("swift"),
+        Some("rb") => Some("ruby"),
+        Some("php") => Some("php"),
+        Some("c") | Some("h") => Some("c"),
+        Some("cpp") | Some("hpp") => Some("cpp"),
+        Some("cs") => Some("csharp"),
+        Some("sh") | Some("bash") | Some("zsh") | Some("fish") => Some("shell"),
+        Some("sql") => Some("sql"),
+        Some("json") | Some("jsonc") => Some("json"),
+        Some("yaml") | Some("yml") => Some("yaml"),
+        Some("toml") => Some("toml"),
+        Some("ini") | Some("cfg") | Some("conf") => Some("ini"),
+        Some("xml") => Some("xml"),
+        Some("css") => Some("css"),
+        Some("scss") => Some("scss"),
+        Some("less") => Some("less"),
+        Some("vue") => Some("vue"),
+        Some("svelte") => Some("svelte"),
+        Some("astro") => Some("astro"),
         _ => None,
     }
 }
@@ -517,8 +569,9 @@ fn normalize_relative_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{FileChangeStatus, MetadataStore};
+    use super::{language_from_path, FileChangeStatus, MetadataStore};
     use std::fs;
+    use std::path::Path;
 
     #[tokio::test]
     async fn initializes_schema_without_error() {
@@ -618,5 +671,178 @@ mod tests {
             .expect("file should classify");
 
         assert_eq!(status, FileChangeStatus::Changed);
+    }
+
+    // --- set_workspace_root ---
+
+    #[tokio::test]
+    async fn set_workspace_root_succeeds_for_existing_directory() {
+        let original_workspace = tempfile::tempdir().expect("workspace dir");
+        let new_workspace = tempfile::tempdir().expect("new workspace dir");
+        let store = MetadataStore::open(original_workspace.path())
+            .await
+            .expect("store should open");
+
+        let result = store
+            .set_workspace_root(new_workspace.path())
+            .expect("set_workspace_root should succeed");
+
+        let canonical = new_workspace
+            .path()
+            .canonicalize()
+            .expect("should canonicalize");
+        assert_eq!(result, canonical.to_string_lossy().to_string());
+    }
+
+    #[tokio::test]
+    async fn set_workspace_root_creates_directory_if_missing() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let store = MetadataStore::open(temp_dir.path())
+            .await
+            .expect("store should open");
+
+        let new_root = temp_dir.path().join("new_workspace");
+        // Does not exist yet
+        assert!(!new_root.exists());
+
+        let result = store.set_workspace_root(&new_root);
+        // Should succeed (canonicalize_existing_dir creates it)
+        assert!(result.is_ok(), "should create missing directory");
+        assert!(new_root.exists(), "directory should be created");
+    }
+
+    #[tokio::test]
+    async fn set_workspace_root_affects_normalize_path() {
+        let original = tempfile::tempdir().expect("original workspace");
+        let new_ws = tempfile::tempdir().expect("new workspace");
+        let store = MetadataStore::open(original.path())
+            .await
+            .expect("store should open");
+
+        // Before changing root, a relative path normalizes against the original root
+        let before = store.normalize_path("src/main.rs");
+
+        store
+            .set_workspace_root(new_ws.path())
+            .expect("set_workspace_root should succeed");
+
+        // After changing root, resolve_path resolves against new root
+        let file_in_new_ws = new_ws.path().join("src").join("main.rs");
+        fs::create_dir_all(file_in_new_ws.parent().unwrap()).expect("create src dir");
+        fs::write(&file_in_new_ws, "fn main() {}").expect("write file");
+
+        let resolved = store.resolve_path(&file_in_new_ws);
+        assert!(
+            resolved.is_ok(),
+            "file in new workspace should resolve: {:?}",
+            resolved
+        );
+    }
+
+    #[tokio::test]
+    async fn set_workspace_root_rejects_relative_to_old_root_after_change() {
+        let original = tempfile::tempdir().expect("original workspace");
+        let new_ws = tempfile::tempdir().expect("new workspace");
+
+        // Write a file in original workspace
+        let file_in_original = original.path().join("secret.rs");
+        fs::write(&file_in_original, "fn secret() {}").expect("write file");
+
+        let store = MetadataStore::open(original.path())
+            .await
+            .expect("store should open");
+
+        // Change to new workspace
+        store
+            .set_workspace_root(new_ws.path())
+            .expect("set_workspace_root should succeed");
+
+        // Trying to resolve absolute path from OLD workspace should now fail
+        let result = store.resolve_path(&file_in_original);
+        assert!(
+            result.is_err(),
+            "absolute path from old workspace should be rejected after root change"
+        );
+    }
+
+    // --- language_from_path: extended language coverage ---
+
+    #[test]
+    fn language_from_path_maps_javascript_variants() {
+        assert_eq!(language_from_path(Path::new("app.js")), Some("javascript"));
+        assert_eq!(language_from_path(Path::new("module.mjs")), Some("javascript"));
+        assert_eq!(language_from_path(Path::new("common.cjs")), Some("javascript"));
+    }
+
+    #[test]
+    fn language_from_path_maps_typescript_variants() {
+        assert_eq!(language_from_path(Path::new("app.ts")), Some("typescript"));
+        assert_eq!(language_from_path(Path::new("module.mts")), Some("typescript"));
+        assert_eq!(language_from_path(Path::new("common.cts")), Some("typescript"));
+        assert_eq!(language_from_path(Path::new("component.tsx")), Some("tsx"));
+        assert_eq!(language_from_path(Path::new("widget.jsx")), Some("jsx"));
+    }
+
+    #[test]
+    fn language_from_path_maps_new_languages() {
+        assert_eq!(language_from_path(Path::new("main.rs")), Some("rust"));
+        assert_eq!(language_from_path(Path::new("server.go")), Some("go"));
+        assert_eq!(language_from_path(Path::new("script.py")), Some("python"));
+        assert_eq!(language_from_path(Path::new("App.java")), Some("java"));
+        assert_eq!(language_from_path(Path::new("Main.kt")), Some("kotlin"));
+        assert_eq!(language_from_path(Path::new("Main.kts")), Some("kotlin"));
+        assert_eq!(language_from_path(Path::new("View.swift")), Some("swift"));
+        assert_eq!(language_from_path(Path::new("controller.rb")), Some("ruby"));
+        assert_eq!(language_from_path(Path::new("index.php")), Some("php"));
+    }
+
+    #[test]
+    fn language_from_path_maps_c_family() {
+        assert_eq!(language_from_path(Path::new("util.c")), Some("c"));
+        assert_eq!(language_from_path(Path::new("header.h")), Some("c"));
+        assert_eq!(language_from_path(Path::new("engine.cpp")), Some("cpp"));
+        assert_eq!(language_from_path(Path::new("types.hpp")), Some("cpp"));
+        assert_eq!(language_from_path(Path::new("Service.cs")), Some("csharp"));
+    }
+
+    #[test]
+    fn language_from_path_maps_shell_variants() {
+        assert_eq!(language_from_path(Path::new("run.sh")), Some("shell"));
+        assert_eq!(language_from_path(Path::new("run.bash")), Some("shell"));
+        assert_eq!(language_from_path(Path::new("init.zsh")), Some("shell"));
+        assert_eq!(language_from_path(Path::new("setup.fish")), Some("shell"));
+    }
+
+    #[test]
+    fn language_from_path_maps_data_and_config_formats() {
+        assert_eq!(language_from_path(Path::new("schema.sql")), Some("sql"));
+        assert_eq!(language_from_path(Path::new("config.json")), Some("json"));
+        assert_eq!(language_from_path(Path::new("settings.jsonc")), Some("json"));
+        assert_eq!(language_from_path(Path::new("docker-compose.yaml")), Some("yaml"));
+        assert_eq!(language_from_path(Path::new("values.yml")), Some("yaml"));
+        assert_eq!(language_from_path(Path::new("Cargo.toml")), Some("toml"));
+        assert_eq!(language_from_path(Path::new("settings.ini")), Some("ini"));
+        assert_eq!(language_from_path(Path::new("app.cfg")), Some("ini"));
+        assert_eq!(language_from_path(Path::new("server.conf")), Some("ini"));
+        assert_eq!(language_from_path(Path::new("pom.xml")), Some("xml"));
+    }
+
+    #[test]
+    fn language_from_path_maps_web_formats() {
+        assert_eq!(language_from_path(Path::new("style.css")), Some("css"));
+        assert_eq!(language_from_path(Path::new("theme.scss")), Some("scss"));
+        assert_eq!(language_from_path(Path::new("layout.less")), Some("less"));
+        assert_eq!(language_from_path(Path::new("App.vue")), Some("vue"));
+        assert_eq!(language_from_path(Path::new("Counter.svelte")), Some("svelte"));
+        assert_eq!(language_from_path(Path::new("Page.astro")), Some("astro"));
+    }
+
+    #[test]
+    fn language_from_path_returns_none_for_unknown_extensions() {
+        assert_eq!(language_from_path(Path::new("image.png")), None);
+        assert_eq!(language_from_path(Path::new("archive.zip")), None);
+        assert_eq!(language_from_path(Path::new("README.md")), None);
+        assert_eq!(language_from_path(Path::new("notes.txt")), None);
+        assert_eq!(language_from_path(Path::new("Dockerfile")), None);
     }
 }
