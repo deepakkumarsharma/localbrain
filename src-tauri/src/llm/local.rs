@@ -217,19 +217,31 @@ fn validate_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
 
 fn repair_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| format!("Failed to read current dir: {e}"))?;
-    let src_dir = cwd.join("src-tauri").join("target").join("debug");
+    let src_dir_candidates = [
+        cwd.join("target").join("debug"),
+        cwd.join("src-tauri").join("target").join("debug"),
+    ];
+    let src_dir = src_dir_candidates
+        .into_iter()
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| cwd.join("target").join("debug"));
     let dst_dir = app
         .path()
         .resolve("binaries", BaseDirectory::Resource)
         .map_err(|e| format!("Failed to resolve runtime destination directory: {e}"))?;
 
-    if !src_dir.exists() || !dst_dir.exists() {
+    if !src_dir.exists() {
         return Err(format!(
-            "Local AI runtime repair directories are missing. source={} destination={}",
-            src_dir.display(),
-            dst_dir.display()
+            "Local AI runtime repair source directory is missing. source={}",
+            src_dir.display()
         ));
     }
+    std::fs::create_dir_all(&dst_dir).map_err(|e| {
+        format!(
+            "Failed to create runtime destination directory {}: {e}",
+            dst_dir.display()
+        )
+    })?;
 
     let entries = std::fs::read_dir(&src_dir)
         .map_err(|e| format!("Failed to read runtime source dir: {e}"))?;

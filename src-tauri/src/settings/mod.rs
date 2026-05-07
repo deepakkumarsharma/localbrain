@@ -1,5 +1,6 @@
 mod persistence;
 
+use crate::embeddings;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::AppHandle;
@@ -19,6 +20,7 @@ pub struct ProviderSettings {
     pub provider: LlmProvider,
     pub cloud_enabled: bool,
     pub local_model_path: Option<String>,
+    pub embedding_model_path: Option<String>,
 }
 
 pub struct SettingsStore {
@@ -32,12 +34,14 @@ impl SettingsStore {
                 provider: LlmProvider::Local,
                 cloud_enabled: false,
                 local_model_path: None,
+                embedding_model_path: None,
             }),
         }
     }
 
     pub fn load_from_disk(&self, app: &AppHandle) {
         let loaded = persistence::load_settings(app);
+        embeddings::set_embedding_model_path(loaded.embedding_model_path.clone());
         if let Ok(mut settings) = self.settings.lock() {
             *settings = loaded;
         }
@@ -75,6 +79,21 @@ impl SettingsStore {
         settings.local_model_path = local_model_path;
         let updated = settings.clone();
         drop(settings);
+        persistence::save_settings(app, &updated)?;
+
+        Ok(updated)
+    }
+
+    pub fn set_embedding_model_path(
+        &self,
+        app: &AppHandle,
+        embedding_model_path: Option<String>,
+    ) -> Result<ProviderSettings, String> {
+        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
+        settings.embedding_model_path = embedding_model_path;
+        let updated = settings.clone();
+        drop(settings);
+        embeddings::set_embedding_model_path(updated.embedding_model_path.clone());
         persistence::save_settings(app, &updated)?;
 
         Ok(updated)

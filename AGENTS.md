@@ -4,6 +4,13 @@ You are working on **Localbrain**, a local-first codebase intelligence platform.
 
 Act as a **Principal Software Engineer**. Optimize for correctness, small diffs, minimal context loading, and low token usage.
 
+## Mandatory Agent Guardrails (Highest Priority)
+
+1. **Read this `AGENTS.md` before answering any user message or performing any action.**
+2. **Never run this command on a local machine:**
+   - `cargo test llm::tests:: --manifest-path src-tauri/Cargo.toml`
+3. The command above is allowed only in GitHub CI/CD workflows, not local interactive sessions.
+
 ---
 
 ## 1. Project Identity

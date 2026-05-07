@@ -1,15 +1,13 @@
 import type { FormEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
-import { MessageSquare, Send, Settings } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, FileCode2, Info, Link2, MessageSquare, Send, Settings } from 'lucide-react';
 import { marked } from 'marked';
 import { getAgentApiStatus } from '../lib/api';
-import type { ChatMessage } from '../lib/chat';
+import type { ChatMessage, Citation } from '../lib/chat';
 import { askLocal } from '../lib/chat';
 import { getGraphContext } from '../lib/graph';
 import { getProviderSettings } from '../lib/settings';
 import { useAppStore } from '../store/useAppStore';
-
-const suggestedQuestions = ['How does this work?', 'Where is graph logic?', 'Show parser flow'];
 
 export function RightPanel() {
   const {
@@ -22,6 +20,7 @@ export function RightPanel() {
     providerSettings,
     llmRunning,
     projectPath,
+    setActiveSourcePath,
     addChatMessage,
     replaceChatMessage,
     setAgentApiStatus,
@@ -33,6 +32,8 @@ export function RightPanel() {
   } = useAppStore();
   const [query, setQuery] = useState('');
   const [isAsking, setIsAsking] = useState(false);
+  const [hasAskedForCurrentFile, setHasAskedForCurrentFile] = useState(false);
+  const [relationshipsCollapsed, setRelationshipsCollapsed] = useState(false);
   const chatRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -61,6 +62,10 @@ export function RightPanel() {
   }, [activeSourcePath, projectPath, setGraphContext, setGraphError]);
 
   useEffect(() => {
+    setHasAskedForCurrentFile(false);
+  }, [activeSourcePath]);
+
+  useEffect(() => {
     const element = chatRef.current;
     if (element) {
       element.scrollTop = element.scrollHeight;
@@ -80,6 +85,7 @@ export function RightPanel() {
 
     setChatError(null);
     setIsAsking(true);
+    setHasAskedForCurrentFile(true);
     setQuery('');
     const userMessage = createChatMessage('user', trimmed);
     const pendingId = `assistant-${Date.now()}`;
@@ -129,12 +135,34 @@ export function RightPanel() {
     }
   }
 
+  async function handleEvidenceClick(citation: Citation) {
+    if (!projectPath || isAsking) {
+      return;
+    }
+
+    if (citation.path) {
+      setActiveSourcePath(citation.path);
+    }
+
+    const lineScope = citation.startLine
+      ? citation.endLine && citation.endLine !== citation.startLine
+        ? `L${citation.startLine}-L${citation.endLine}`
+        : `L${citation.startLine}`
+      : 'relevant lines';
+
+    await askQuestion(
+      `Explain ${citation.path} (${lineScope}) in detail: intent, data flow, key logic, risks, and what to change safely.`,
+    );
+  }
+
   const focusedName = projectPath
     ? (selectedGraphNode?.label ?? sourceFileName(activeSourcePath || 'No file selected'))
     : 'No project selected';
   const focusedKind = projectPath ? (selectedGraphNode?.kind ?? 'Feature') : 'Idle';
   const isLocalReady = Boolean(providerSettings?.localModelPath) && llmRunning;
   const canAskLocalBrain = Boolean(projectPath) && !isAsking;
+  const knowledgeCachedLocally = Boolean(projectPath);
+  const isReady = isLocalReady && knowledgeCachedLocally;
   const dependentCount = graphContext.length;
   const exportCount = Math.max(
     0,
@@ -149,6 +177,14 @@ export function RightPanel() {
     ? inferPurposeFromPath(activeSourcePath)
     : 'No active file selected';
   const complexity = dependentCount > 8 ? 'High' : dependentCount > 3 ? 'Medium' : 'Low';
+  const suggestedQuestions = useMemo(
+    () =>
+      buildSuggestedQuestions(activeSourcePath, selectedGraphNode?.label, selectedGraphNode?.kind).slice(
+        0,
+        3,
+      ),
+    [activeSourcePath, selectedGraphNode?.kind, selectedGraphNode?.label],
+  );
   return (
     <aside className="flex h-full min-w-0 flex-col border-l border-app-border bg-app-panel">
       <div className="border-b border-app-border p-4">
@@ -158,177 +194,260 @@ export function RightPanel() {
         </h3>
       </div>
 
-      <div className="space-y-4 border-b border-app-border p-4 bg-app-panel/30">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0">
-            <div className="truncate text-[18px] font-bold text-app-text" title={focusedName}>
-              {focusedName}
+      <div className="space-y-3 border-b border-app-border bg-app-panel/20 p-3 max-h-[33%] overflow-auto">
+        {projectPath ? (
+          <>
+            <div className="relative overflow-hidden rounded-2xl border border-app-border bg-app-background p-3.5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-panelSoft/60">
+                <FileCode2 className="h-5 w-5 text-app-muted" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+              <div
+                className="truncate text-[21px] font-black tracking-[-0.02em] text-app-text"
+                title={focusedName}
+              >
+                {focusedName}
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-app-border bg-app-panelSoft px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.11em] text-app-text">
+                  {focusedKind}
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.09em] text-app-muted">
+                  {providerSettings?.provider ?? 'local'} · v{appVersion}
+                </span>
+              </div>
+              </div>
             </div>
-            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-[12px] font-bold text-blue-400">
-              {focusedKind}
+            <div className="flex items-center gap-2 rounded-xl border border-app-border bg-app-panelSoft px-2.5 py-1.5 text-right">
+              <div className="text-[9px] font-black uppercase tracking-[0.11em] text-app-muted">Cloud</div>
+              <span
+                className={`relative h-5 w-9 rounded-full border transition-colors ${providerSettings?.cloudEnabled ? 'border-app-accent bg-app-accent/35' : 'border-app-border bg-app-background'}`}
+              >
+                <span
+                  className={`absolute top-[1px] h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${providerSettings?.cloudEnabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+                />
+              </span>
+              <div className="mt-0.5 text-[11px] font-extrabold text-app-text">
+                {providerSettings?.cloudEnabled ? 'On' : 'Off'}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="space-y-2.5 text-[14px] font-medium">
-          <InfoRow label="File" value={projectPath ? activeSourcePath || '-' : '-'} mono />
-          <InfoRow label="Dependents" value={projectPath ? String(dependentCount) : '0'} />
-          <InfoRow
-            label="Provider"
-            value={`${providerSettings?.provider ?? 'local'} · cloud ${providerSettings?.cloudEnabled ? 'on' : 'off'}`}
-          />
-          <InfoRow label="Version" value={appVersion} />
-        </div>
-        <div className="rounded-xl border border-app-border bg-app-background p-3">
-          <div className="mb-2 text-[11px] font-black uppercase tracking-widest text-app-muted">
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <MetricPill label="Dependents" value={projectPath ? String(dependentCount) : '0'} />
+            <MetricPill label="Exports" value={String(exportCount)} />
+            <MetricPill label="Complexity" value={complexity} />
+            <MetricPill label="Status" value={projectPath ? 'Live' : 'Idle'} />
+          </div>
+          <div className="mt-2.5 rounded-xl border border-app-border bg-app-panelSoft/50 p-2">
+            <div className="grid grid-cols-[auto,1fr] items-center gap-2">
+              <span className="text-app-muted font-black text-[9px] uppercase tracking-[0.11em]">File</span>
+              <span className="flex items-center justify-end gap-1.5 text-[12px] font-semibold text-app-text">
+                <span className="truncate font-mono">{projectPath ? activeSourcePath || '-' : '-'}</span>
+                <Link2 className="h-3.5 w-3.5 text-app-muted" aria-hidden="true" />
+              </span>
+            </div>
+          </div>
+            </div>
+
+            <div className="rounded-2xl border border-app-border bg-app-background p-3.5 shadow-sm">
+          <div className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-app-muted">
             Knowledge Graph Enrichment
           </div>
-          <div className="space-y-1.5 text-[12px]">
-            <InfoRow label="Status" value={projectPath ? 'In progress' : 'Not started'} />
-            <InfoRow label="Summary" value={summaryText} />
-            <InfoRow label="Exports" value={String(exportCount)} />
+          <div className="mb-2 flex items-start gap-2 rounded-lg border border-app-border bg-app-panelSoft/40 px-2.5 py-2 text-[12px] leading-6 text-app-text/95">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-app-muted" aria-hidden="true" />
+            <p>{summaryText}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
+            <InfoRow label="Purpose" value={purposeText} />
             <InfoRow label="Dependents" value={String(dependentCount)} />
             <InfoRow label="Last Author" value="Pending git integration" />
-            <InfoRow label="Complexity" value={complexity} />
             <InfoRow label="Test Status" value="Pending coverage mapping" />
-            <InfoRow label="Purpose" value={purposeText} />
           </div>
-        </div>
-        <div>
-          <div className="mb-2 text-[11px] font-black tracking-widest text-app-muted">
-            RELATIONSHIPS
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {graphContext.slice(0, 4).map((item) => (
-              <span
-                key={`${item.path}-${item.symbol.name}-${item.symbol.range.startLine}`}
-                className="rounded-lg border border-app-border bg-app-background px-2.5 py-1 text-[12px] font-bold text-violet-400 shadow-sm"
-              >
-                {item.symbol.name}
-              </span>
-            ))}
-            {!projectPath || graphContext.length === 0 ? (
-              <span className="text-[12px] text-app-muted font-medium italic">
-                {projectPath ? 'No graph context loaded' : 'Load a project to see relationships'}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 p-4 bg-app-panel/40 flex flex-col">
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-widest text-app-muted">
-            <MessageSquare className="h-4 w-4" aria-hidden="true" />
-            ASK LOCAL BRAIN
-          </h4>
-          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-black text-emerald-400 uppercase">
-            {agentApiStatus?.running ? 'api on' : 'local'}
-          </span>
-        </div>
-        <div
-          ref={chatRef}
-          className="app-scrollbar mb-4 max-h-[220px] space-y-3.5 overflow-auto pr-1"
-        >
-          {chatMessages.length === 0 ? (
-            <div className="rounded-xl border border-app-border bg-app-background p-4 text-[14px] font-medium text-app-muted leading-relaxed">
-              <span
-                className={`mr-2.5 inline-block h-2.5 w-2.5 rounded-full ${isLocalReady ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`}
-              />
-              {isLocalReady
-                ? projectPath
-                  ? 'Local model is ready. Ask anything about this workspace.'
-                  : 'Select a project folder from the left panel to unlock Ask Local Brain.'
-                : 'Local model is not ready yet. Select a model and start server from the left panel.'}
             </div>
-          ) : (
-            chatMessages.map((message) => (
-              <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
-                <div
-                  className={
-                    message.role === 'user'
-                      ? 'max-w-[85%] rounded-2xl bg-app-accent px-4 py-2.5 text-[14px] font-bold text-white shadow-lg shadow-app-accent/20'
-                      : 'max-w-[95%] rounded-2xl border border-app-border bg-app-background px-4 py-3 text-[14px] font-medium text-app-text leading-relaxed shadow-sm'
-                  }
-                >
-                  {message.role === 'assistant' ? (
-                    <>
-                      <div
-                        className="chat-markdown text-[14px] leading-7 [&_h1]:mb-3 [&_h1]:mt-1 [&_h1]:text-[16px] [&_h1]:font-black [&_h1]:tracking-tight [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:uppercase [&_h2]:tracking-[0.08em] [&_h2]:text-app-muted [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[13px] [&_h3]:font-bold [&_p]:mb-3 [&_p]:text-app-text/95 [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_li]:text-app-text/90 [&_code]:rounded [&_code]:border [&_code]:border-app-border [&_code]:bg-app-panelSoft [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_pre]:mb-3 [&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-app-border [&_pre]:bg-app-panelSoft [&_pre]:p-3"
-                        dangerouslySetInnerHTML={{
-                          __html: sanitizeHtml(
-                            marked.parse(normalizeAssistantText(message.content)) as string,
-                          ),
-                        }}
-                      />
-                      {message.citations.length > 0 ? (
-                        <div className="mt-3 border-t border-app-border pt-2">
-                          <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-app-muted">
-                            Evidence
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {message.citations.slice(0, 4).map((citation, index) => (
-                              <span
-                                key={`${citation.path}-${index}`}
-                                className="inline-flex items-center rounded-full border border-app-border bg-app-panelSoft px-2 py-0.5 font-mono text-[11px] text-app-muted"
-                                title={sourceLabel(citation)}
-                              >
-                                {sourceLabel(citation)}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  )}
+
+            <div>
+          <button
+            className="mb-1.5 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left hover:bg-app-panelSoft/50"
+            type="button"
+            onClick={() => setRelationshipsCollapsed((current) => !current)}
+          >
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-app-muted">
+              RELATIONSHIPS
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-app-muted transition-transform ${relationshipsCollapsed ? '-rotate-90' : 'rotate-0'}`}
+              aria-hidden="true"
+            />
+          </button>
+          <div className={`${relationshipsCollapsed ? 'hidden' : 'pt-0.5'}`}>
+            <span className="text-[12px] text-app-muted font-medium italic">
+              {!projectPath
+                ? 'Load a project to see relationships'
+                : graphContext.length === 0
+                  ? 'No graph context loaded'
+                  : `${graphContext.slice(0, 4).map((item) => item.symbol.name).join(', ')}${graphContext.length > 4 ? '…' : ''}`}
+            </span>
+          </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-2xl border border-app-border bg-app-background p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-app-border bg-app-panelSoft/60">
+                <FileCode2 className="h-5 w-5 text-app-muted" aria-hidden="true" />
+              </div>
+              <div>
+                <div className="text-[18px] font-black tracking-tight text-app-text">
+                  No project selected
+                </div>
+                <div className="mt-0.5 text-[12px] text-app-muted">
+                  Select a project folder from the left panel to load Knowledge Graph context.
                 </div>
               </div>
-            ))
-          )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 bg-app-panel/40 flex flex-col">
+        <div className="border-b border-app-border px-4 py-3">
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="flex items-center gap-2 text-[13px] font-black uppercase tracking-widest text-app-muted">
+              <MessageSquare className="h-4 w-4" aria-hidden="true" />
+              ASK LOCAL BRAIN
+            </h4>
+            <span className="rounded-full border border-app-border bg-app-panelSoft px-2.5 py-1 text-[11px] font-black text-app-text uppercase">
+              {agentApiStatus?.running ? 'api on' : 'local'}
+            </span>
+          </div>
         </div>
-        <form className="relative" onSubmit={handleAsk}>
-          <input
-            className="h-11 w-full rounded-xl border border-app-border bg-app-background pl-4 pr-11 text-[14px] font-bold outline-none placeholder:text-app-muted focus:ring-2 focus:ring-app-accent focus:border-transparent transition-all shadow-inner"
-            placeholder={
-              !projectPath
-                ? 'Select a project folder first...'
-                : isLocalReady
-                  ? 'Ask about the codebase...'
-                  : 'Ask from the local index...'
-            }
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            disabled={!canAskLocalBrain}
-          />
-          <button
-            className="absolute right-2 top-2 rounded-lg p-1.5 text-app-muted hover:bg-app-panelSoft hover:text-app-text transition-colors"
-            type="submit"
-            disabled={!canAskLocalBrain}
-            aria-label="Ask Localbrain"
-          >
-            <Send className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </form>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {suggestedQuestions.map((question) => (
-            <button
-              key={question}
-              className="rounded-full border border-app-border bg-app-panelSoft px-3.5 py-1.5 text-[12px] font-bold text-app-muted hover:text-app-text hover:border-app-accent transition-all"
-              type="button"
+
+        <div className="min-h-0 flex-1 p-4">
+          <div ref={chatRef} className="app-scrollbar h-full space-y-3.5 overflow-auto pr-1">
+            {chatMessages.length === 0 ? (
+              <div className="rounded-2xl border border-app-border bg-app-background p-4 text-[13px] font-medium text-app-muted leading-relaxed shadow-sm">
+                {projectPath
+                  ? 'Ask focused questions about the selected file, graph node, or dependencies.'
+                  : 'Select a project folder from the left panel to unlock Ask Local Brain.'}
+              </div>
+            ) : (
+              chatMessages.map((message) => (
+                <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : ''}>
+                  <div
+                    className={
+                      message.role === 'user'
+                        ? 'max-w-[85%] rounded-2xl bg-app-accent px-4 py-2.5 text-[14px] font-bold text-white shadow-lg shadow-app-accent/20'
+                        : 'max-w-[95%] rounded-2xl border border-app-border bg-app-background px-4 py-3 text-[14px] font-medium text-app-text leading-relaxed shadow-sm'
+                    }
+                  >
+                    {message.role === 'assistant' ? (
+                      <>
+                        <div
+                          className="chat-markdown text-[14px] leading-8 tracking-[0.01em] [&_h1]:mb-3 [&_h1]:mt-1 [&_h1]:text-[17px] [&_h1]:font-black [&_h1]:tracking-tight [&_h1]:text-app-accent [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:uppercase [&_h2]:tracking-[0.12em] [&_h2]:text-app-accent [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[14px] [&_h3]:font-bold [&_h3]:text-app-text [&_strong]:font-extrabold [&_strong]:text-app-text [&_p]:mb-3 [&_p]:text-app-text/95 [&_ul]:mb-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_ol]:mb-4 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_li]:text-app-text/90 [&_li]:leading-7 [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-app-accent [&_blockquote]:pl-3 [&_blockquote]:text-app-muted [&_code]:rounded [&_code]:border [&_code]:border-app-border [&_code]:bg-app-panelSoft [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_pre]:mb-4 [&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-app-border [&_pre]:bg-app-panelSoft [&_pre]:p-3 [&_table]:my-3 [&_table]:block [&_table]:w-full [&_table]:max-w-[min(92vw,100%)] [&_table]:overflow-x-auto [&_table]:border-collapse [&_table]:rounded-lg [&_table]:border [&_table]:border-app-border [&_th]:whitespace-nowrap [&_th]:bg-app-panelSoft [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-extrabold [&_td]:min-w-[140px] [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:text-[13px]"
+                          dangerouslySetInnerHTML={{
+                            __html: sanitizeHtml(
+                              marked.parse(formatAssistantResponse(message.content)) as string,
+                            ),
+                          }}
+                        />
+                        {message.citations.length > 0 ? (
+                          <div className="mt-3 border-t border-app-border pt-2">
+                            <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-app-muted">
+                              Evidence
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {message.citations.slice(0, 4).map((citation, index) => (
+                                <button
+                                  key={`${citation.path}-${index}`}
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-app-border bg-app-panelSoft px-2 py-1 text-[11px] font-bold text-app-text hover:border-app-accent hover:text-app-accent transition-colors"
+                                  title={sourceLabel(citation)}
+                                  type="button"
+                                  onClick={() => void handleEvidenceClick(citation)}
+                                >
+                                  <span className="font-mono">{sourcePathLabel(citation.path)}</span>
+                                  {citation.startLine ? (
+                                    <span className="inline-flex items-center rounded-full border border-app-border bg-app-accent/15 px-1.5 py-0.5 font-mono text-[10px] font-extrabold tracking-[0.04em] text-app-accent">
+                                      {lineChipLabel(citation.startLine, citation.endLine)}
+                                    </span>
+                                  ) : null}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="border-t border-app-border p-4 bg-app-panel">
+          {!hasAskedForCurrentFile ? (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {suggestedQuestions.map((question) => (
+                <button
+                  key={question}
+                  className="rounded-full border border-app-border bg-app-panelSoft px-3 py-1 text-[11px] font-semibold text-app-muted hover:text-app-text hover:border-app-accent transition-all"
+                  type="button"
+                  disabled={!canAskLocalBrain}
+                  onClick={() => void askQuestion(question)}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <form className="relative" onSubmit={handleAsk}>
+            <input
+              className="h-11 w-full rounded-xl border border-app-border bg-app-background pl-4 pr-11 text-[14px] font-bold outline-none placeholder:text-app-muted focus:ring-2 focus:ring-app-accent focus:border-transparent transition-all shadow-inner"
+              placeholder={
+                !projectPath
+                  ? 'Select a project folder first...'
+                  : isLocalReady
+                    ? 'Ask about this file or node...'
+                    : 'Ask from the local index...'
+              }
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
               disabled={!canAskLocalBrain}
-              onClick={() => void askQuestion(question)}
+            />
+            <button
+              className="absolute right-2 top-2 rounded-lg p-1.5 text-app-muted hover:bg-app-panelSoft hover:text-app-text transition-colors"
+              type="submit"
+              disabled={!canAskLocalBrain}
+              aria-label="Ask Localbrain"
             >
-              {question}
+              <Send className="h-5 w-5" aria-hidden="true" />
             </button>
-          ))}
+          </form>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-app-border px-4 py-3 text-[11px] font-black tracking-widest text-app-muted uppercase">
-        <span>Knowledge cached locally</span>
-        <span className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          READY
+      <div className="flex items-center gap-3 border-t border-app-border px-3 py-3 text-[9px] font-extrabold uppercase tracking-[0.07em] text-app-muted whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className={`h-2 w-2 rounded-full ${isReady ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
+          />
+          <span className={isReady ? 'text-emerald-300' : 'text-red-300'}>Ready</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className={`h-2 w-2 rounded-full ${knowledgeCachedLocally ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
+          />
+          <span className={knowledgeCachedLocally ? 'text-emerald-300' : 'text-red-300'}>
+            Knowledge Cached Locally
+          </span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className={`h-2 w-2 rounded-full ${isLocalReady ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
+          />
+          <span className={isLocalReady ? 'text-emerald-300' : 'text-red-300'}>Local Model Is Ready</span>
         </span>
       </div>
     </aside>
@@ -337,13 +456,22 @@ export function RightPanel() {
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-app-muted font-bold text-[12px] uppercase tracking-wider">{label}</span>
+    <div className="grid grid-cols-[auto,1fr] items-start gap-x-2 gap-y-0.5 py-0.5">
+      <span className="text-app-muted font-black text-[9px] uppercase tracking-[0.11em]">{label}</span>
       <span
-        className={`max-w-[70%] text-right text-app-text ${mono ? 'truncate font-mono text-[13px]' : 'whitespace-normal break-words font-bold text-[12px]'}`}
+        className={`text-right text-app-text ${mono ? 'truncate font-mono text-[12px] font-medium' : 'whitespace-normal break-words font-semibold text-[12px]'}`}
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function MetricPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-app-border bg-app-panelSoft px-2.5 py-1.5">
+      <div className="text-[9px] font-black uppercase tracking-[0.1em] text-app-muted">{label}</div>
+      <div className="mt-0.5 truncate text-[13px] font-extrabold text-app-text">{value}</div>
     </div>
   );
 }
@@ -357,6 +485,32 @@ function inferPurposeFromPath(path: string) {
   return 'General project logic';
 }
 
+function buildSuggestedQuestions(
+  activePath: string,
+  selectedNodeLabel?: string,
+  selectedNodeKind?: string,
+) {
+  const file = sourceFileName(activePath || 'this file');
+  const node = selectedNodeLabel || file;
+  const nodeKind = (selectedNodeKind || 'symbol').split('_').join(' ');
+
+  const suggestions = [
+    `What does ${file} do?`,
+    `Explain ${node} and its dependencies`,
+    `Where is ${node} used?`,
+    `Show call flow for ${node}`,
+    `Summarize risks and edge cases in ${file}`,
+    `What tests cover this ${nodeKind}?`,
+  ];
+
+  const unique = new Set<string>();
+  return suggestions.filter((item) => {
+    if (unique.has(item)) return false;
+    unique.add(item);
+    return true;
+  });
+}
+
 function sourceFileName(path: string) {
   return path.split('/').pop() ?? path;
 }
@@ -368,6 +522,17 @@ function sourceLabel(source: { path: string; startLine: number | null; endLine: 
       : `${source.path}:L${source.startLine}-L${source.endLine}`;
   }
   return source.path;
+}
+
+function sourcePathLabel(path: string) {
+  return path.length > 52 ? `...${path.slice(-49)}` : path;
+}
+
+function lineChipLabel(startLine: number, endLine: number | null) {
+  if (endLine && endLine !== startLine) {
+    return `L${startLine} - L${endLine}`;
+  }
+  return `L${startLine}`;
 }
 
 function createChatMessage(role: ChatMessage['role'], content: string): ChatMessage {
@@ -403,14 +568,28 @@ function sanitizeHtml(value: string): string {
   return doc.body.innerHTML;
 }
 
-function normalizeAssistantText(value: string) {
+function formatAssistantResponse(value: string) {
   const text = value.replace(/\r\n/g, '\n').trim();
-  if (text.includes('\n\n')) {
-    return text;
-  }
-  return text
+  if (!text) return text;
+
+  const normalized = text
     .split('\n')
     .map((line) => line.trimEnd())
     .join('\n')
     .replace(/([.!?])\n(?=[A-Z#-])/g, '$1\n\n');
+
+  const lines = normalized.split('\n');
+  const withHeaders = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return '';
+    if (/^#{1,6}\s/.test(trimmed) || /^[-*]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
+      return line;
+    }
+    if (/^[A-Za-z][A-Za-z\s]+:\s*$/.test(trimmed)) {
+      return `## ${trimmed.slice(0, -1)}`;
+    }
+    return line;
+  });
+
+  return withHeaders.join('\n');
 }

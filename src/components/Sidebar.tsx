@@ -36,6 +36,8 @@ interface SidebarProps {
   onRemoveProject: () => void;
 }
 
+const PROJECT_ROOT_NODE_ID = '__project_root__';
+
 const WIKI_SOURCE_FILE_PATTERN =
   /\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|rs|go|py|java|kt|kts|swift|rb|php|c|h|cpp|hpp|cs|sh|bash|zsh|fish|sql|json|jsonc|ya?ml|toml|ini|cfg|conf|xml|css|scss|less|vue|svelte|astro)$/i;
 
@@ -62,7 +64,9 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
   const [explorerQuery, setExplorerQuery] = useState('');
   const [isStartingServer, setIsStartingServer] = useState(false);
   const [serverStatus, setServerStatus] = useState<string | null>(null);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set([PROJECT_ROOT_NODE_ID]),
+  );
   const indexedCount = searchIndexSummary?.documentsIndexed ?? indexPathSummary?.filesSeen ?? 0;
 
   useEffect(() => {
@@ -177,8 +181,10 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
     const query = explorerQuery.trim().toLowerCase();
     const filtered =
       query.length > 0 ? paths.filter((path) => path.toLowerCase().includes(query)) : paths;
-    return buildFileTree(filtered);
-  }, [indexPathSummary, explorerQuery]);
+    const projectName =
+      projectPath?.split(/[\\/]/).filter(Boolean).pop() || projectPath || 'project';
+    return buildFileTree(filtered, projectName);
+  }, [indexPathSummary, explorerQuery, projectPath]);
 
   const wikiItems = useMemo(() => {
     if (!indexPathSummary?.files) return [];
@@ -209,17 +215,16 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
   }, [citations, projectPath]);
 
   useEffect(() => {
-    if (fileTree.length === 0) return;
+    if (!activeSourcePath) return;
     setExpandedGroups((existing) => {
       const next = new Set(existing);
-      for (const node of fileTree) {
-        if (node.kind === 'folder') {
-          next.add(node.path);
-        }
+      next.add(PROJECT_ROOT_NODE_ID);
+      for (const folderPath of folderAncestors(activeSourcePath)) {
+        next.add(folderPath);
       }
       return next;
     });
-  }, [fileTree]);
+  }, [activeSourcePath]);
 
   return (
     <aside className="flex h-full min-w-0 flex-col border-r border-app-border bg-app-panel overflow-hidden">
@@ -568,10 +573,10 @@ function sourceLabel(path: string, startLine: number | null, endLine: number | n
   return path;
 }
 
-function buildFileTree(paths: string[]): FileTreeNode[] {
+function buildFileTree(paths: string[], projectName: string): FileTreeNode[] {
   const root: FileTreeNode = {
-    name: '',
-    path: '',
+    name: projectName,
+    path: PROJECT_ROOT_NODE_ID,
     kind: 'folder',
     children: [],
   };
@@ -602,7 +607,7 @@ function buildFileTree(paths: string[]): FileTreeNode[] {
   }
 
   sortTreeChildren(root);
-  return root.children;
+  return [root];
 }
 
 function sortTreeChildren(node: FileTreeNode) {
@@ -696,6 +701,17 @@ function getFileColor(path: string) {
   if (path.endsWith('.json')) return 'text-yellow-400';
   if (path.endsWith('.md')) return 'text-emerald-400';
   return 'text-app-muted';
+}
+
+function folderAncestors(path: string): string[] {
+  const parts = path.split('/').filter(Boolean);
+  const folders: string[] = [];
+  let cursor = '';
+  for (let i = 0; i < Math.max(0, parts.length - 1); i += 1) {
+    cursor = cursor ? `${cursor}/${parts[i]}` : parts[i];
+    folders.push(cursor);
+  }
+  return folders;
 }
 
 function Metric({ label, value, color }: { label: string; value: string; color?: string }) {

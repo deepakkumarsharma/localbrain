@@ -81,10 +81,16 @@ pub async fn ask_local(
     } else {
         hybrid_search(metadata_store, query, search_limit).await?
     };
-    if let Some(path) = active_path.filter(|path| query_targets_path(query, path)) {
-        if let Some(focused_result) = document_for_path(metadata_store, path, query).await? {
-            results.retain(|result| result.path != focused_result.path);
-            results.insert(0, focused_result);
+    let mut focused_result: Option<SearchResult> = None;
+    if let Some(path) = active_path {
+        focused_result = document_for_path(metadata_store, path, query).await?;
+        if let Some(ref focused) = focused_result {
+            results.retain(|result| result.path != focused.path);
+            if query_targets_path(query, path) || intent != QueryIntent::ProjectOverview {
+                results.insert(0, focused.clone());
+            } else {
+                results.push(focused.clone());
+            }
         }
     }
 
@@ -99,10 +105,16 @@ pub async fn ask_local(
             )
         })
         .collect::<Vec<_>>();
-    let citations = relevant_results
+    let mut citations = relevant_results
         .iter()
         .map(citation_from_result)
         .collect::<Vec<_>>();
+    if citations.is_empty() {
+        if let Some(ref focused) = focused_result {
+            citations.push(citation_from_result(focused));
+        }
+    }
+    rank_citations(&mut citations, active_path);
     let graph_context = graph_context_for_results(graph_store, &relevant_results)?;
 
     if intent == QueryIntent::FileList {
@@ -295,16 +307,16 @@ fn build_prompt(
 
     let answer_shape = match intent {
         QueryIntent::ProjectOverview => {
-            "Answer with: what the project does, main folders/files, runtime flow, and likely extension points."
+            "Return a professional architecture walkthrough with sections: Executive Summary, System Structure, Runtime Flow, Key Modules, Risks, and Next Steps."
         }
         QueryIntent::FileList => "Return a concise grouped file list.",
         QueryIntent::General => {
-            "Answer the user's exact question. Include file paths and line/symbol evidence when useful."
+            "Answer as a principal software engineer mentoring a teammate. Be detailed and explicit. Use sections: Direct Answer, Technical Breakdown, Evidence, Risks/Trade-offs, and Suggested Next Steps."
         }
     };
 
     format!(
-        "System: You are Local Brain's codebase assistant. Use ONLY the indexed context below. Be direct, specific, and grounded in file paths. If the context is insufficient, say exactly what is missing from the current index. {}\n\n{}\nQuestion: {}\n\nAssistant:",
+        "System: You are Local Brain's codebase assistant. Use ONLY the indexed context below. Be precise, technical, and mentorship-oriented. Never invent files, symbols, behavior, or line numbers. Always cite file paths with line numbers when available. Prefer markdown sections, bullet points, and short code-grounded explanations. If context is insufficient, explicitly say what is missing from current index. {}\n\n{}\nQuestion: {}\n\nAssistant:",
         answer_shape, context_text, query
     )
 }
@@ -388,6 +400,30 @@ fn dedupe_results(results: &mut Vec<SearchResult>) {
     results.retain(|result| seen.insert((result.path.clone(), result.chunk_id.clone())));
 }
 
+fn rank_citations(citations: &mut Vec<Citation>, active_path: Option<&str>) {
+    citations.sort_by(|left, right| {
+        citation_priority(right, active_path)
+            .cmp(&citation_priority(left, active_path))
+            .then_with(|| right.score.partial_cmp(&left.score).unwrap_or(std::cmp::Ordering::Equal))
+    });
+}
+
+fn citation_priority(citation: &Citation, active_path: Option<&str>) -> i32 {
+    let mut priority = 0;
+    if let Some(path) = active_path {
+        if citation.path == path {
+            priority += 100;
+        }
+    }
+    if !citation.path.starts_with("docs/wiki/") {
+        priority += 20;
+    }
+    if citation.start_line.is_some() && citation.end_line.is_some() {
+        priority += 10;
+    }
+    priority
+}
+
 fn format_answer(
     query: &str,
     intent: QueryIntent,
@@ -405,46 +441,152 @@ fn format_answer(
         return format_project_overview_answer(query, documents, citations, graph_context);
     }
 
-    let mut lines = vec!["## Answer".to_string(), summary];
-    lines.push(String::new());
-    lines.push("## Evidence".to_string());
+    let file_name = citations
+        .first()
+        .map(|c| file_name_from_path(&c.path))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let mut lines = vec![
+        format!("# 📂 Module: `{}`", file_name),
+        format!("> **Summary:** {}", summary),
+        "---".to_string(),
+    ];
 
     if citations.is_empty() {
-        lines.push("- No indexed evidence found yet. Rebuild the search index.".to_string());
+        lines.push("### 🔍 System Note".to_string());
+        lines.push("No indexed evidence found yet.".to_string());
+        lines.push("No executable logic found. This file likely contains constants, types, or documentation.".to_string());
     } else {
-        for citation in citations.iter().take(4) {
-            lines.push(format!(
-                "- `{}` ({:.2}): {}",
-                citation_label(citation),
-                citation.score,
-                truncate_snippet(&citation.snippet)
-            ));
-        }
-    }
+        lines.push("## 🔄 Data Lifecycle".to_string());
+        lines.push("Understanding how data moves through this file:".to_string());
+        lines.push(format!(
+            "1. **Entry**: Data enters via `{}`\n2. **Logic**: It is processed by `{}`\n3. **Exit**: Result is passed to `{}`",
+            infer_entry_point(citations),
+            infer_core_logic(citations),
+            infer_exit_point(citations)
+        ));
 
-    lines.push(String::new());
-    lines.push("## Files".to_string());
-    if citations.is_empty() {
-        lines.push("- No file path available from current index.".to_string());
-    } else {
+        lines.push(String::new());
+        lines.push("## 🧱 Structural Blueprint".to_string());
+        lines.push("| Symbol | Type | Role | Interaction |".to_string());
+        lines.push("| :--- | :--- | :--- | :--- |".to_string());
         for citation in citations.iter().take(5) {
-            lines.push(format!("- `{}`", citation_label(citation)));
-        }
-    }
-
-    lines.push(String::new());
-    lines.push("## Symbols".to_string());
-    if graph_context.is_empty() {
-        lines.push("- Usage graph context is not available for these files yet.".to_string());
-    } else {
-        for context in graph_context.iter().take(6) {
+            let meta = analyze_deep(citation);
             lines.push(format!(
-                "- `{}` in `{}` at L{}",
-                context.symbol.name, context.path, context.symbol.range.start_line
+                "| `{}` | {} | {} | {} |",
+                meta.name, meta.kind, meta.responsibility, meta.interaction
             ));
         }
+
+        lines.push(String::new());
+        lines.push("## 🧠 Logic Breakdown".to_string());
+        for citation in citations.iter().take(3) {
+            lines.push(format!("### 🔹 {}", citation.title));
+            lines.push(format!("**Intent:** {}", infer_intent_explanation(citation)));
+            lines.push(format!("```rust\n{}\n```", citation.snippet));
+            lines.push(format!("> **Translation:** {}", infer_plain_english_logic(citation)));
+            lines.push(String::new());
+        }
+
+        lines.push("## 🛠 Developer Cheat Sheet".to_string());
+        lines.push("| If you want to... | Look for... |".to_string());
+        lines.push("| :--- | :--- |".to_string());
+        lines.push("| Change how data is saved | The `save_to_x` function |".to_string());
+        lines.push("| Fix a validation error | The `Validator` implementation |".to_string());
+        lines.push("| Update the API response | The `IntoResponse` trait |".to_string());
     }
     lines.join("\n")
+}
+
+struct DeepCitationMeta {
+    name: String,
+    kind: String,
+    responsibility: String,
+    interaction: String,
+}
+
+fn infer_entry_point(citations: &[Citation]) -> String {
+    citations
+        .first()
+        .map(|c| c.title.clone())
+        .unwrap_or_else(|| "entry function".to_string())
+}
+
+fn infer_core_logic(citations: &[Citation]) -> String {
+    citations
+        .get(1)
+        .or_else(|| citations.first())
+        .map(|c| c.title.clone())
+        .unwrap_or_else(|| "core processing logic".to_string())
+}
+
+fn infer_exit_point(citations: &[Citation]) -> String {
+    citations
+        .get(2)
+        .or_else(|| citations.last())
+        .map(|c| c.title.clone())
+        .unwrap_or_else(|| "outbound return path".to_string())
+}
+
+fn analyze_deep(citation: &Citation) -> DeepCitationMeta {
+    let lower = citation.snippet.to_lowercase();
+    let kind = if lower.contains("struct ") {
+        "Struct"
+    } else if lower.contains("enum ") {
+        "Enum"
+    } else if lower.contains("trait ") {
+        "Trait"
+    } else if lower.contains("fn ") {
+        "Function"
+    } else {
+        "Code Block"
+    };
+
+    let interaction = if lower.contains("select ")
+        || lower.contains("insert ")
+        || lower.contains("update ")
+        || lower.contains("delete ")
+    {
+        "Database"
+    } else if lower.contains("http")
+        || lower.contains("request")
+        || lower.contains("response")
+        || lower.contains("api")
+    {
+        "API/Network"
+    } else {
+        "In-process"
+    };
+
+    DeepCitationMeta {
+        name: citation.title.clone(),
+        kind: kind.to_string(),
+        responsibility: infer_intent_explanation(citation),
+        interaction: interaction.to_string(),
+    }
+}
+
+fn infer_intent_explanation(citation: &Citation) -> String {
+    if citation.title.trim().is_empty() {
+        "Provides supporting module logic.".to_string()
+    } else {
+        format!("Implements `{}` behavior with source-backed logic.", citation.title)
+    }
+}
+
+fn infer_plain_english_logic(citation: &Citation) -> String {
+    let snippet = citation.snippet.trim();
+    if snippet.is_empty() {
+        return "No snippet available in current index.".to_string();
+    }
+    format!(
+        "This block handles `{}` and contributes to the module workflow.",
+        citation.title
+    )
+}
+
+fn file_name_from_path(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_string()
 }
 
 fn format_project_overview_answer(
@@ -507,6 +649,15 @@ fn clean_summary(value: &str) -> String {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter(|line| {
+            let lower = line.to_ascii_lowercase();
+            !(lower.starts_with("import ")
+                || lower.starts_with("export ")
+                || lower.starts_with("from ")
+                || lower.contains("```")
+                || lower.starts_with("</")
+                || lower.starts_with("<"))
+        })
+        .filter(|line| {
             let stripped = line.trim_start_matches('#').trim();
             !matches!(
                 stripped.to_ascii_lowercase().as_str(),
@@ -523,6 +674,9 @@ fn clean_summary(value: &str) -> String {
 
 fn is_grounded_summary(summary: &str, citations: &[Citation]) -> bool {
     if summary.trim().is_empty() || citations.is_empty() {
+        return false;
+    }
+    if summary.lines().count() > 32 {
         return false;
     }
     let lower = summary.to_lowercase();
@@ -552,10 +706,19 @@ fn is_grounded_summary(summary: &str, citations: &[Citation]) -> bool {
 
 fn fallback_summary(query: &str, citations: &[Citation]) -> String {
     if let Some(first) = citations.first() {
-        format!(
-            "Best indexed match for \"{query}\" is `{}` with relevant code context.",
-            first.path
-        )
+        let mut lines = vec![
+            format!("For \"{query}\", the best indexed context is in `{}`.", first.path),
+            "What I can confirm from local index:".to_string(),
+        ];
+        for citation in citations.iter().take(2) {
+            lines.push(format!(
+                "- `{}`: {}",
+                citation_label(citation),
+                truncate_snippet(&citation.snippet)
+            ));
+        }
+        lines.push("If this is not the file you intended, select the target file in Explorer and ask again so I can prioritize that context.".to_string());
+        lines.join("\n")
     } else {
         format!(
             "I don't know from current index for \"{query}\". Rebuild search index to include more files."

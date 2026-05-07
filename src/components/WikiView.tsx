@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import { getWikiContent } from '../lib/wiki';
 import { useAppStore } from '../store/useAppStore';
 
-export function WikiView() {
+interface WikiViewProps {
+  onGenerateWiki: () => void;
+  isGeneratingWiki: boolean;
+}
+
+export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
   const { wikiSummary, activeSourcePath, setActivePanel, setSelectedGraphNode, graphView } =
     useAppStore();
   const [content, setContent] = useState<string | null>(null);
@@ -137,12 +142,21 @@ export function WikiView() {
                     Generate wiki from the top action bar to create source-backed documentation for
                     this file.
                   </p>
-                  <button
-                    className="mt-6 rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors"
-                    onClick={() => setActivePanel('graph')}
-                  >
-                    Switch to Graph View
-                  </button>
+                  <div className="mt-6 flex items-center gap-3">
+                    <button
+                      className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors disabled:opacity-60"
+                      onClick={onGenerateWiki}
+                      disabled={isGeneratingWiki}
+                    >
+                      {isGeneratingWiki ? 'Generating Wiki...' : 'Generate Wiki For This File'}
+                    </button>
+                    <button
+                      className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors"
+                      onClick={() => setActivePanel('graph')}
+                    >
+                      Switch to Graph View
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

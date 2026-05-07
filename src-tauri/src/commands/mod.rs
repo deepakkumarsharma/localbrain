@@ -265,6 +265,15 @@ pub fn set_local_model_path(
 }
 
 #[tauri::command]
+pub fn set_embedding_model_path(
+    app: tauri::AppHandle,
+    path: Option<String>,
+    settings_store: tauri::State<SettingsStore>,
+) -> Result<ProviderSettings, String> {
+    settings_store.set_embedding_model_path(&app, path)
+}
+
+#[tauri::command]
 pub fn set_workspace_root(
     path: String,
     metadata_store: tauri::State<'_, MetadataStore>,

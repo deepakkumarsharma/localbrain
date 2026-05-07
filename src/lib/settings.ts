@@ -6,6 +6,7 @@ export interface ProviderSettings {
   provider: LlmProvider;
   cloudEnabled: boolean;
   localModelPath: string | null;
+  embeddingModelPath: string | null;
 }
 
 export async function getProviderSettings() {
@@ -18,6 +19,10 @@ export async function setProvider(provider: LlmProvider, cloudEnabled: boolean) 
 
 export async function setLocalModelPath(path: string | null) {
   return invoke<ProviderSettings>('set_local_model_path', { path });
+}
+
+export async function setEmbeddingModelPath(path: string | null) {
+  return invoke<ProviderSettings>('set_embedding_model_path', { path });
 }
 
 export async function startLocalLlm() {

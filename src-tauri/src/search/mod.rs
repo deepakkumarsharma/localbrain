@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use sqlx::Row;
+use tantivy::collector::TopDocs;
+use tantivy::query::QueryParser;
+use tantivy::schema::{Field, Schema, Value, FAST, STORED, STRING, TEXT};
+use tantivy::{doc, Index, ReloadPolicy};
 use thiserror::Error;
 use walkdir::WalkDir;
 
@@ -15,6 +19,7 @@ const MAX_SEARCH_SCAN_LIMIT: usize = 10_000;
 const SEARCH_SCAN_MULTIPLIER: usize = 50;
 const CHUNK_TARGET_LINES: usize = 80;
 const CHUNK_OVERLAP_LINES: usize = 12;
+const SEARCH_INDEX_DIR: &str = ".localbrain/search";
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +74,10 @@ pub enum SearchError {
     Walk(#[from] walkdir::Error),
     #[error("embedding vector is invalid for {path}")]
     InvalidVector { path: String },
+    #[error("search index operation failed: {0}")]
+    Tantivy(#[from] tantivy::TantivyError),
+    #[error("search query parse failed: {0}")]
+    QueryParse(#[from] tantivy::query::QueryParserError),
 }
 
 pub async fn rebuild_search_index(
@@ -97,6 +106,8 @@ pub async fn rebuild_search_index(
         }
     }
 
+    rebuild_tantivy_index(metadata_store).await?;
+
     Ok(summary)
 }
 
@@ -113,6 +124,7 @@ pub async fn clear_search_index(metadata_store: &MetadataStore) -> Result<(), Se
     sqlx::query("DELETE FROM search_documents")
         .execute(metadata_store.pool())
         .await?;
+    clear_tantivy_index(metadata_store)?;
     Ok(())
 }
 
@@ -159,7 +171,7 @@ pub async fn index_document(
         .to_string();
     let kind = document_kind(path);
     let updated_at = current_timestamp()?;
-    let vector = embed_text(&format!("{title}\n{content}"));
+    let vector = embed_text(&format!("{normalized_path}\n{title}\n{content}"));
     let chunks = chunk_content(&title, &content);
 
     metadata_store.record_file_metadata(path).await?;
@@ -187,46 +199,52 @@ pub async fn search_text(
     query: &str,
     limit: usize,
 ) -> Result<Vec<SearchResult>, SearchError> {
-    let rows = sqlx::query(
-        "
-        SELECT path, chunk_id, kind, title, content, start_line, end_line
-        FROM search_chunks
-        ORDER BY updated_at DESC
-        LIMIT ?
-        ",
-    )
-    .bind(scan_limit_for(limit))
-    .fetch_all(metadata_store.pool())
-    .await?;
-
+    let index = open_or_create_tantivy_index(metadata_store)?;
+    let schema = index.schema();
+    let fields = tantivy_fields(&schema)?;
+    let reader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::OnCommitWithDelay)
+        .try_into()?;
+    reader.reload()?;
+    let searcher = reader.searcher();
+    let query_parser =
+        QueryParser::for_index(&index, vec![fields.path, fields.title, fields.content]);
+    let parsed_query = match query_parser.parse_query(query) {
+        Ok(parsed) => parsed,
+        Err(_) => query_parser.parse_query(&query_terms(query).join(" "))?,
+    };
+    let top_docs = searcher.search(
+        &parsed_query,
+        &TopDocs::with_limit(i64_to_usize(scan_limit_for(limit))),
+    )?;
+    let terms = query_terms(query);
     let mut results = Vec::new();
-    let query_terms = query_terms(query);
 
-    for row in rows {
-        let path: String = row.try_get("path")?;
-        let chunk_id: String = row.try_get("chunk_id")?;
-        let kind: String = row.try_get("kind")?;
-        let title: String = row.try_get("title")?;
-        let content: String = row.try_get("content")?;
-        let start_line = row.try_get::<i64, _>("start_line")?;
-        let end_line = row.try_get::<i64, _>("end_line")?;
-        let haystack = format!("{title}\n{content}").to_lowercase();
-        let text_score = score_text(&haystack, &query_terms);
+    for (score, address) in top_docs {
+        let retrieved = searcher.doc(address)?;
+        let path = extract_text_field(&retrieved, fields.path);
+        let chunk_id = extract_text_field(&retrieved, fields.chunk_id);
+        let kind = extract_text_field(&retrieved, fields.kind);
+        let title = extract_text_field(&retrieved, fields.title);
+        let content = extract_text_field(&retrieved, fields.content);
+        let start_line =
+            extract_u64_field(&retrieved, fields.start_line).map(|value| value as usize);
+        let end_line = extract_u64_field(&retrieved, fields.end_line).map(|value| value as usize);
+        let text_score = score.max(0.0);
 
-        if text_score > 0.0 {
-            results.push(SearchResult {
-                path,
-                chunk_id: Some(chunk_id),
-                kind,
-                title,
-                snippet: snippet(&content, &query_terms),
-                start_line: Some(i64_to_usize(start_line)),
-                end_line: Some(i64_to_usize(end_line)),
-                text_score,
-                vector_score: 0.0,
-                score: text_score,
-            });
-        }
+        results.push(SearchResult {
+            path,
+            chunk_id: Some(chunk_id),
+            kind,
+            title,
+            snippet: snippet(&content, &terms),
+            start_line,
+            end_line,
+            text_score,
+            vector_score: 0.0,
+            score: text_score,
+        });
     }
 
     results.sort_by(sort_by_score);
@@ -241,7 +259,7 @@ pub async fn hybrid_search(
 ) -> Result<Vec<SearchResult>, SearchError> {
     let rows = sqlx::query(
         "
-        SELECT c.path, c.chunk_id, c.kind, c.title, c.content, c.start_line, c.end_line, e.vector_json
+        SELECT c.path, c.chunk_id, c.kind, c.title, c.content, c.start_line, c.end_line, e.vector_json, e.vector_blob
         FROM search_chunks c
         LEFT JOIN chunk_embeddings e ON e.path = c.path AND e.chunk_id = c.chunk_id
         ORDER BY c.updated_at DESC
@@ -265,15 +283,27 @@ pub async fn hybrid_search(
         let start_line = row.try_get::<i64, _>("start_line")?;
         let end_line = row.try_get::<i64, _>("end_line")?;
         let vector_json: Option<String> = row.try_get("vector_json")?;
+        let vector_blob: Option<Vec<u8>> = row.try_get("vector_blob")?;
         let haystack = format!("{title}\n{content}").to_lowercase();
         let text_score = score_text(&haystack, &query_terms);
-        let vector_score = match vector_json {
-            Some(vector_json) => {
+        let vector_score = match (vector_json, vector_blob) {
+            (Some(vector_json), _) => {
                 let vector: Vec<f32> = serde_json::from_str(&vector_json)
                     .map_err(|_| SearchError::InvalidVector { path: path.clone() })?;
+                if vector.len() != query_vector.len() {
+                    return Err(SearchError::InvalidVector { path: path.clone() });
+                }
                 cosine_similarity(&query_vector, &vector).max(0.0)
             }
-            None => 0.0,
+            (None, Some(vector_blob)) => {
+                let vector = vector_from_blob(&vector_blob)
+                    .ok_or_else(|| SearchError::InvalidVector { path: path.clone() })?;
+                if vector.len() != query_vector.len() {
+                    return Err(SearchError::InvalidVector { path: path.clone() });
+                }
+                cosine_similarity(&query_vector, &vector).max(0.0)
+            }
+            (None, None) => 0.0,
         };
         let score = (text_score * 0.65) + (vector_score * 0.35);
 
@@ -428,20 +458,23 @@ async fn upsert_embedding(
     let vector_json = serde_json::to_string(vector).map_err(|_| SearchError::InvalidVector {
         path: path.to_string(),
     })?;
+    let vector_blob = vector_to_blob(vector);
 
     sqlx::query(
         "
-        INSERT INTO embeddings (path, dimensions, vector_json, updated_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO embeddings (path, dimensions, vector_json, vector_blob, updated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
           dimensions = excluded.dimensions,
           vector_json = excluded.vector_json,
+          vector_blob = excluded.vector_blob,
           updated_at = excluded.updated_at
         ",
     )
     .bind(path)
     .bind(i64::try_from(vector.len()).unwrap_or(i64::MAX))
     .bind(vector_json)
+    .bind(vector_blob)
     .bind(updated_at)
     .execute(metadata_store.pool())
     .await?;
@@ -504,18 +537,20 @@ async fn upsert_chunk_embedding(
     chunk: &SearchChunk,
     updated_at: &str,
 ) -> Result<(), SearchError> {
-    let vector = embed_text(&format!("{}\n{}", chunk.title, chunk.content));
+    let vector = embed_text(&format!("{path}\n{}\n{}", chunk.title, chunk.content));
     let vector_json = serde_json::to_string(&vector).map_err(|_| SearchError::InvalidVector {
         path: path.to_string(),
     })?;
+    let vector_blob = vector_to_blob(&vector);
 
     sqlx::query(
         "
-        INSERT INTO chunk_embeddings (path, chunk_id, dimensions, vector_json, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO chunk_embeddings (path, chunk_id, dimensions, vector_json, vector_blob, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(path, chunk_id) DO UPDATE SET
           dimensions = excluded.dimensions,
           vector_json = excluded.vector_json,
+          vector_blob = excluded.vector_blob,
           updated_at = excluded.updated_at
         ",
     )
@@ -523,6 +558,7 @@ async fn upsert_chunk_embedding(
     .bind(&chunk.id)
     .bind(i64::try_from(vector.len()).unwrap_or(i64::MAX))
     .bind(vector_json)
+    .bind(vector_blob)
     .bind(updated_at)
     .execute(metadata_store.pool())
     .await?;
@@ -852,6 +888,147 @@ fn next_char_boundary(value: &str, mut index: usize) -> usize {
     index
 }
 
+fn vector_to_blob(vector: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(vector));
+    for value in vector {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn vector_from_blob(blob: &[u8]) -> Option<Vec<f32>> {
+    if blob.len() % std::mem::size_of::<f32>() != 0 {
+        return None;
+    }
+    let mut vector = Vec::with_capacity(blob.len() / std::mem::size_of::<f32>());
+    for chunk in blob.chunks_exact(std::mem::size_of::<f32>()) {
+        let mut bytes = [0_u8; 4];
+        bytes.copy_from_slice(chunk);
+        vector.push(f32::from_le_bytes(bytes));
+    }
+    Some(vector)
+}
+
+struct TantivyFields {
+    path: Field,
+    chunk_id: Field,
+    kind: Field,
+    title: Field,
+    content: Field,
+    start_line: Field,
+    end_line: Field,
+}
+
+fn search_index_path(metadata_store: &MetadataStore) -> Result<PathBuf, SearchError> {
+    let workspace_root = metadata_store.workspace_root_path()?;
+    Ok(workspace_root.join(SEARCH_INDEX_DIR))
+}
+
+fn build_tantivy_schema() -> Schema {
+    let mut builder = Schema::builder();
+    builder.add_text_field("path", STRING | STORED);
+    builder.add_text_field("chunk_id", STRING | STORED);
+    builder.add_text_field("kind", STRING | STORED);
+    builder.add_text_field("title", TEXT | STORED);
+    builder.add_text_field("content", TEXT | STORED);
+    builder.add_u64_field("start_line", FAST | STORED);
+    builder.add_u64_field("end_line", FAST | STORED);
+    builder.build()
+}
+
+fn tantivy_fields(schema: &Schema) -> Result<TantivyFields, SearchError> {
+    let required = |name: &str| {
+        schema
+            .get_field(name)
+            .map_err(|_| SearchError::InvalidVector {
+                path: format!("missing tantivy field: {name}"),
+            })
+    };
+
+    Ok(TantivyFields {
+        path: required("path")?,
+        chunk_id: required("chunk_id")?,
+        kind: required("kind")?,
+        title: required("title")?,
+        content: required("content")?,
+        start_line: required("start_line")?,
+        end_line: required("end_line")?,
+    })
+}
+
+fn open_or_create_tantivy_index(metadata_store: &MetadataStore) -> Result<Index, SearchError> {
+    let index_path = search_index_path(metadata_store)?;
+    std::fs::create_dir_all(&index_path)?;
+    let schema = build_tantivy_schema();
+
+    if index_path.join("meta.json").exists() {
+        Ok(Index::open_in_dir(&index_path)?)
+    } else {
+        Ok(Index::create_in_dir(&index_path, schema)?)
+    }
+}
+
+fn clear_tantivy_index(metadata_store: &MetadataStore) -> Result<(), SearchError> {
+    let index_path = search_index_path(metadata_store)?;
+    if index_path.exists() {
+        std::fs::remove_dir_all(index_path)?;
+    }
+    Ok(())
+}
+
+async fn rebuild_tantivy_index(metadata_store: &MetadataStore) -> Result<(), SearchError> {
+    clear_tantivy_index(metadata_store)?;
+    let index = open_or_create_tantivy_index(metadata_store)?;
+    let schema = index.schema();
+    let fields = tantivy_fields(&schema)?;
+    let mut writer = index.writer(30_000_000)?;
+
+    let rows = sqlx::query(
+        "
+        SELECT path, chunk_id, kind, title, content, start_line, end_line
+        FROM search_chunks
+        ORDER BY path, start_line
+        ",
+    )
+    .fetch_all(metadata_store.pool())
+    .await?;
+
+    for row in rows {
+        let path: String = row.try_get("path")?;
+        let chunk_id: String = row.try_get("chunk_id")?;
+        let kind: String = row.try_get("kind")?;
+        let title: String = row.try_get("title")?;
+        let content: String = row.try_get("content")?;
+        let start_line = row.try_get::<i64, _>("start_line")?;
+        let end_line = row.try_get::<i64, _>("end_line")?;
+
+        writer.add_document(doc!(
+            fields.path => path,
+            fields.chunk_id => chunk_id,
+            fields.kind => kind,
+            fields.title => title,
+            fields.content => content,
+            fields.start_line => i64_to_usize(start_line) as u64,
+            fields.end_line => i64_to_usize(end_line) as u64,
+        ))?;
+    }
+
+    writer.commit()?;
+    Ok(())
+}
+
+fn extract_text_field(document: &tantivy::TantivyDocument, field: Field) -> String {
+    document
+        .get_first(field)
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn extract_u64_field(document: &tantivy::TantivyDocument, field: Field) -> Option<u64> {
+    document.get_first(field).and_then(|value| value.as_u64())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{hybrid_search, project_overview_chunks, rebuild_search_index, search_text};
@@ -887,6 +1064,10 @@ mod tests {
         assert!(text_results[0].chunk_id.is_some());
         assert_eq!(text_results[0].start_line, Some(1));
         assert!(!hybrid_results.is_empty());
+        assert!(temp_dir
+            .path()
+            .join(".localbrain/search/meta.json")
+            .exists());
     }
 
     #[tokio::test]

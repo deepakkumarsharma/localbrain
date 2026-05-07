@@ -26,7 +26,7 @@ export default function App() {
     clearProjectData,
   } = useAppStore();
   const [sidebarWidth, setSidebarWidth] = useState(400);
-  const [rightPanelWidth, setRightPanelWidth] = useState(450);
+  const [rightPanelWidth, setRightPanelWidth] = useState(600);
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
   const watcherUnlistenRef = useRef<(() => void) | null>(null);
@@ -90,7 +90,7 @@ export default function App() {
       const newWidth = Math.min(Math.max(200, e.clientX), 400);
       setSidebarWidth(newWidth);
     } else if (isResizingRightPanel.current) {
-      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
+      const newWidth = Math.min(Math.max(400, window.innerWidth - e.clientX), 1000);
       setRightPanelWidth(newWidth);
     }
   }, []);

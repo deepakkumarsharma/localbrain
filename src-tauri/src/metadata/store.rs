@@ -110,7 +110,32 @@ impl MetadataStore {
         sqlx::query(CREATE_CHUNK_EMBEDDINGS_TABLE)
             .execute(&self.pool)
             .await?;
+        self.ensure_column_exists("embeddings", "vector_blob", "BLOB")
+            .await?;
+        self.ensure_column_exists("chunk_embeddings", "vector_blob", "BLOB")
+            .await?;
 
+        Ok(())
+    }
+
+    async fn ensure_column_exists(
+        &self,
+        table: &str,
+        column: &str,
+        column_type: &str,
+    ) -> Result<(), MetadataError> {
+        let pragma = format!("PRAGMA table_info({table})");
+        let rows = sqlx::query(&pragma).fetch_all(&self.pool).await?;
+        let exists = rows.iter().any(|row| {
+            row.try_get::<String, _>("name")
+                .map(|name| name == column)
+                .unwrap_or(false)
+        });
+
+        if !exists {
+            let alter = format!("ALTER TABLE {table} ADD COLUMN {column} {column_type}");
+            sqlx::query(&alter).execute(&self.pool).await?;
+        }
         Ok(())
     }
 
@@ -145,6 +170,13 @@ impl MetadataStore {
             .map(|root| root.clone())
             .unwrap_or_else(project_root);
         normalize_display_path(path.as_ref(), &workspace_root)
+    }
+
+    pub fn workspace_root_path(&self) -> Result<PathBuf, MetadataError> {
+        self.workspace_root
+            .read()
+            .map(|root| root.clone())
+            .map_err(|_| MetadataError::InvalidPath("workspace_root_lock".to_string()))
     }
 
     pub fn set_workspace_root(&self, path: impl AsRef<Path>) -> Result<String, MetadataError> {
