@@ -110,10 +110,23 @@ impl MetadataStore {
         sqlx::query(CREATE_CHUNK_EMBEDDINGS_TABLE)
             .execute(&self.pool)
             .await?;
+        self.ensure_column_exists("files", "workspace_root", "TEXT NOT NULL DEFAULT ''")
+            .await?;
         self.ensure_column_exists("embeddings", "vector_blob", "BLOB")
             .await?;
         self.ensure_column_exists("chunk_embeddings", "vector_blob", "BLOB")
             .await?;
+        let workspace_root = self.current_workspace_root_string()?;
+        sqlx::query(
+            "
+            UPDATE files
+            SET workspace_root = ?
+            WHERE workspace_root IS NULL OR workspace_root = ''
+            ",
+        )
+        .bind(workspace_root)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -193,6 +206,11 @@ impl MetadataStore {
         &self.pool
     }
 
+    fn current_workspace_root_string(&self) -> Result<String, MetadataError> {
+        let workspace_root = self.workspace_root_path()?;
+        Ok(workspace_root.to_string_lossy().to_string())
+    }
+
     pub async fn scan_file(&self, path: impl AsRef<Path>) -> Result<FileMetadata, MetadataError> {
         let requested_path = path.as_ref();
         let source_path = self.resolve_path(requested_path)?;
@@ -219,6 +237,7 @@ impl MetadataStore {
             "
             INSERT INTO files (
               path,
+              workspace_root,
               language,
               size_bytes,
               modified_at,
@@ -226,8 +245,9 @@ impl MetadataStore {
               last_indexed_at,
               status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
+              workspace_root = excluded.workspace_root,
               language = excluded.language,
               size_bytes = excluded.size_bytes,
               modified_at = excluded.modified_at,
@@ -237,6 +257,7 @@ impl MetadataStore {
             ",
         )
         .bind(&metadata.path)
+        .bind(self.current_workspace_root_string()?)
         .bind(&metadata.language)
         .bind(metadata.size_bytes)
         .bind(&metadata.modified_at)
@@ -251,14 +272,16 @@ impl MetadataStore {
 
     pub async fn get_file(&self, path: &str) -> Result<Option<FileMetadata>, MetadataError> {
         let path = self.normalize_path(path);
+        let workspace_root = self.current_workspace_root_string()?;
         let row = sqlx::query(
             "
             SELECT path, language, size_bytes, modified_at, content_hash, last_indexed_at, status
             FROM files
-            WHERE path = ?
+            WHERE path = ? AND workspace_root = ?
             ",
         )
         .bind(path)
+        .bind(workspace_root)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -372,24 +395,22 @@ impl MetadataStore {
     }
 
     pub async fn get_tracked_files(&self, prefix: &str) -> Result<Vec<String>, MetadataError> {
+        let workspace_root = self.current_workspace_root_string()?;
         if prefix.is_empty() {
             let rows = sqlx::query(
                 "
                 SELECT path FROM files
-                WHERE status != ?
+                WHERE status != ? AND workspace_root = ?
                 ",
             )
             .bind(FileChangeStatus::Deleted.as_str())
+            .bind(&workspace_root)
             .fetch_all(&self.pool)
             .await?;
 
             let mut paths = Vec::new();
             for row in rows {
-                let path: String = row.try_get("path")?;
-                let resolved = self.resolve_path(&path);
-                if resolved.is_ok() {
-                    paths.push(path);
-                }
+                paths.push(row.try_get("path")?);
             }
             return Ok(paths);
         }
@@ -397,12 +418,13 @@ impl MetadataStore {
         let rows = sqlx::query(
             "
             SELECT path FROM files
-            WHERE (path = ? OR path LIKE ?) AND status != ?
+            WHERE (path = ? OR path LIKE ?) AND status != ? AND workspace_root = ?
             ",
         )
         .bind(prefix)
         .bind(format!("{}/%", prefix))
         .bind(FileChangeStatus::Deleted.as_str())
+        .bind(workspace_root)
         .fetch_all(&self.pool)
         .await?;
 

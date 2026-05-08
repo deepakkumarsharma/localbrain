@@ -1,6 +1,7 @@
 pub const CREATE_FILES_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS files (
   path TEXT PRIMARY KEY,
+  workspace_root TEXT NOT NULL DEFAULT '',
   language TEXT,
   size_bytes INTEGER NOT NULL,
   modified_at TEXT,
