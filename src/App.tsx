@@ -7,30 +7,45 @@ import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
 import { initFileWatcher } from './lib/fileWatcher';
 import { indexPath, resolveProjectRoot, setWorkspaceRoot } from './lib/indexer';
-import type { IndexProgressEvent } from './lib/indexer';
+import type { IndexPathSummary, IndexProgressEvent } from './lib/indexer';
 import { clearSearchIndex, rebuildSearchIndex } from './lib/search';
+import type { SearchIndexSummary } from './lib/search';
 import { generate_wiki } from './lib/wiki';
+import type { WikiSummary } from './lib/wiki';
 import { useAppStore } from './store/useAppStore';
 
 const DEFAULT_STEP_TIMEOUT_MS = 120_000;
 const INDEXING_TIMEOUT_MS = 1_800_000;
 const SEARCH_REBUILD_TIMEOUT_MS = 600_000;
 const WIKI_TIMEOUT_MS = 600_000;
+const LAST_PROJECT_PATH_KEY = 'localbrain.lastProjectPath';
+
+interface ProjectSnapshot {
+  indexPathSummary: IndexPathSummary;
+  searchIndexSummary: SearchIndexSummary;
+  wikiSummary: WikiSummary;
+}
 
 async function withTimeout<T>(
   promise: Promise<T>,
   label: string,
   timeoutMs = DEFAULT_STEP_TIMEOUT_MS,
 ) {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`${label} timed out after ${timeoutMs / 1000}s`)),
-        timeoutMs,
-      ),
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs / 1000}s`)),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function indexingStatus(progress: IndexProgressEvent) {
@@ -50,6 +65,7 @@ export default function App() {
     setAppVersion,
     theme,
     toggleTheme,
+    projectPath,
     setIndexPathResult,
     setIndexProgress,
     setIndexError,
@@ -68,6 +84,7 @@ export default function App() {
   const watcherUnlistenRef = useRef<(() => void) | null>(null);
   const projectLoadRunRef = useRef(0);
   const lastProgressUpdateRef = useRef({ at: 0, filesSeen: -1 });
+  const projectSnapshotCacheRef = useRef<Map<string, ProjectSnapshot>>(new Map());
 
   useEffect(() => {
     void invoke<string>('get_app_version')
@@ -130,6 +147,14 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (projectPath) {
+      window.localStorage.setItem(LAST_PROJECT_PATH_KEY, projectPath);
+    } else {
+      window.localStorage.removeItem(LAST_PROJECT_PATH_KEY);
+    }
+  }, [projectPath]);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.repeat) {
         return;
@@ -190,8 +215,10 @@ export default function App() {
       projectLoadRunRef.current = runId;
       lastProgressUpdateRef.current = { at: 0, filesSeen: -1 };
       const isCurrentRun = () => projectLoadRunRef.current === runId;
-      clearProjectData();
-      setIndexProgress(null);
+      if (watcherUnlistenRef.current) {
+        watcherUnlistenRef.current();
+        watcherUnlistenRef.current = null;
+      }
       setProjectLoading(true, '5% · Preparing workspace...');
       setIndexError(null);
       setWikiError(null);
@@ -200,6 +227,28 @@ export default function App() {
       try {
         const path = await withTimeout(resolveProjectRoot(selectedPath), 'Project root detection');
         if (!isCurrentRun()) return;
+
+        const cachedSnapshot = projectSnapshotCacheRef.current.get(path);
+        if (cachedSnapshot) {
+          clearProjectData();
+          setIndexProgress(null);
+          setProjectPath(path);
+          setIndexPathResult(cachedSnapshot.indexPathSummary);
+          setSearchIndexResult(cachedSnapshot.searchIndexSummary);
+          setWikiResult(cachedSnapshot.wikiSummary);
+
+          watcherUnlistenRef.current = await withTimeout(
+            initFileWatcher(path),
+            'File watcher startup',
+          );
+          if (!isCurrentRun()) return;
+
+          setProjectLoading(false, '100% · Ready (restored from local session cache)');
+          return;
+        }
+
+        clearProjectData();
+        setIndexProgress(null);
         setProjectPath(path);
         if (path !== selectedPath) {
           setProjectLoading(true, `10% · Detected project root: ${path}`);
@@ -231,9 +280,6 @@ export default function App() {
         setSearchIndexResult(searchSummary);
 
         setProjectLoading(true, '75% · Starting file watcher...');
-        if (watcherUnlistenRef.current) {
-          watcherUnlistenRef.current();
-        }
         watcherUnlistenRef.current = await withTimeout(
           initFileWatcher(path),
           'File watcher startup',
@@ -248,6 +294,11 @@ export default function App() {
         );
         if (!isCurrentRun()) return;
         setWikiResult(wikiSummary);
+        projectSnapshotCacheRef.current.set(path, {
+          indexPathSummary: summary,
+          searchIndexSummary: searchSummary,
+          wikiSummary,
+        });
         if (summary.errors.length > 0) {
           setIndexError(summary.errors.join('\n'));
         }
@@ -288,6 +339,14 @@ export default function App() {
     setIndexProgress(null);
     setProjectLoading(false, 'No project selected');
   }, [clearProjectData, setIndexProgress, setProjectLoading, setProjectPath]);
+
+  useEffect(() => {
+    const lastProjectPath = window.localStorage.getItem(LAST_PROJECT_PATH_KEY);
+    if (!lastProjectPath) {
+      return;
+    }
+    void loadProject(lastProjectPath);
+  }, [loadProject]);
 
   return (
     <div className="flex h-screen min-w-[1180px] flex-col overflow-hidden bg-app-background text-app-text">

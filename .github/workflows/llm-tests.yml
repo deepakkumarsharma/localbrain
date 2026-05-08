@@ -25,6 +25,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Run LLM tests
+        timeout-minutes: 10
         working-directory: src-tauri
         run: |
           cargo test llm::tests::

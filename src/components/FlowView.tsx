@@ -65,9 +65,11 @@ export function FlowView() {
             <div
               className="mb-3 h-2.5 overflow-hidden rounded-full bg-app-panelSoft"
               role="progressbar"
+              aria-label="Flow load progress"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(loadingProgress.percent)}
+              aria-valuetext={`${Math.round(loadingProgress.percent)}% loaded`}
             >
               <div
                 className="flow-progress-fill h-full rounded-full bg-app-accent"

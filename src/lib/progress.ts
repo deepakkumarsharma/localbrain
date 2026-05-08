@@ -14,7 +14,10 @@ function clampPercent(value: number) {
 }
 
 function fileName(path: string | null | undefined) {
-  return path?.split('/').pop() || null;
+  if (!path) {
+    return null;
+  }
+  return path.split(/[\\/]/).pop() || null;
 }
 
 function fromStatus(projectStatus: string | null): LoadingProgress | null {
