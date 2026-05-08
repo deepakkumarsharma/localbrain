@@ -26,4 +26,5 @@ jobs:
 
       - name: Run LLM tests
         working-directory: src-tauri
-        run: cargo test llm::tests::
+        run: |
+          cargo test llm::tests::

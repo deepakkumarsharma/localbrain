@@ -121,7 +121,7 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
             <div className="rounded-2xl border border-app-border bg-app-panel p-0 shadow-[0_20px_35px_-26px_rgba(0,0,0,0.45)] overflow-hidden">
               {content ? (
                 <>
-                  <div className="border-b border-app-border bg-gradient-to-r from-blue-500/10 via-violet-500/10 to-emerald-500/10 px-7 py-3 text-[11px] font-black uppercase tracking-widest text-app-muted">
+                  <div className="border-b border-app-border bg-app-panelSoft px-7 py-3 text-[11px] font-black uppercase tracking-widest text-app-muted">
                     Developer Overview
                   </div>
                   <article
@@ -259,7 +259,7 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
           margin: 1rem 0;
           padding: 0.9rem 1rem;
           border-left: 3px solid rgb(var(--color-app-accent));
-          background: linear-gradient(90deg, rgba(var(--color-app-accent),0.12), rgb(var(--color-app-panel-soft)));
+          background: rgba(var(--color-app-accent), 0.08);
           border-radius: 0.6rem;
           color: rgb(var(--color-app-text));
         }
@@ -302,7 +302,7 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
           text-align: left;
         }
         .wiki-markdown th {
-          background: linear-gradient(90deg, rgba(var(--color-app-accent),0.12), rgb(var(--color-app-panel-soft)));
+          background: rgb(var(--color-app-panel-soft));
           color: rgb(var(--color-app-text));
           font-weight: 700;
         }

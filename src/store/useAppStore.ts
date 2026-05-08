@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import type { GraphContext, GraphIngestSummary, GraphViewData, GraphViewNode } from '../lib/graph';
-import type { IndexFileSummary, IndexPathSummary, IndexRunSummary } from '../lib/indexer';
+import type {
+  IndexFileSummary,
+  IndexPathSummary,
+  IndexProgressEvent,
+  IndexRunSummary,
+} from '../lib/indexer';
 import type { FileMetadata } from '../lib/metadata';
 import type { ParsedFile } from '../lib/parser';
 import type { SearchIndexSummary, SearchResult } from '../lib/search';
@@ -32,6 +37,7 @@ interface AppState {
   indexFileSummary: IndexFileSummary | null;
   indexPathSummary: IndexPathSummary | null;
   indexRun: IndexRunSummary | null;
+  indexProgress: IndexProgressEvent | null;
   indexError: string | null;
   wikiSummary: WikiSummary | null;
   wikiError: string | null;
@@ -66,6 +72,7 @@ interface AppState {
   setIndexFileResult: (summary: IndexFileSummary) => void;
   setIndexPathResult: (summary: IndexPathSummary) => void;
   setIndexRun: (run: IndexRunSummary | null) => void;
+  setIndexProgress: (progress: IndexProgressEvent | null) => void;
   setIndexError: (error: string | null) => void;
   setWikiResult: (summary: WikiSummary) => void;
   setWikiError: (error: string | null) => void;
@@ -85,9 +92,9 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  activePanel: 'graph',
+  activePanel: 'flow',
   appVersion: 'loading',
-  theme: 'dark',
+  theme: 'light',
   activeSourcePath: '',
   lastFileChange: null,
   lastFileChangeAt: null,
@@ -104,6 +111,7 @@ export const useAppStore = create<AppState>((set) => ({
   indexFileSummary: null,
   indexPathSummary: null,
   indexRun: null,
+  indexProgress: null,
   indexError: null,
   wikiSummary: null,
   wikiError: null,
@@ -154,6 +162,7 @@ export const useAppStore = create<AppState>((set) => ({
       activeSourcePath: state.activeSourcePath || summary.files?.[0]?.path || '',
     })),
   setIndexRun: (run) => set({ indexRun: run }),
+  setIndexProgress: (progress) => set({ indexProgress: progress }),
   setIndexError: (error) => set({ indexError: error }),
   setWikiResult: (summary) =>
     set({
@@ -198,6 +207,7 @@ export const useAppStore = create<AppState>((set) => ({
       indexFileSummary: null,
       indexPathSummary: null,
       indexRun: null,
+      indexProgress: null,
       indexError: null,
       wikiSummary: null,
       wikiError: null,

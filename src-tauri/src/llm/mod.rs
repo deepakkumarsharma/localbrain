@@ -400,11 +400,16 @@ fn dedupe_results(results: &mut Vec<SearchResult>) {
     results.retain(|result| seen.insert((result.path.clone(), result.chunk_id.clone())));
 }
 
-fn rank_citations(citations: &mut Vec<Citation>, active_path: Option<&str>) {
+fn rank_citations(citations: &mut [Citation], active_path: Option<&str>) {
     citations.sort_by(|left, right| {
         citation_priority(right, active_path)
             .cmp(&citation_priority(left, active_path))
-            .then_with(|| right.score.partial_cmp(&left.score).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(|| {
+                right
+                    .score
+                    .partial_cmp(&left.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     });
 }
 
@@ -482,9 +487,15 @@ fn format_answer(
         lines.push("## 🧠 Logic Breakdown".to_string());
         for citation in citations.iter().take(3) {
             lines.push(format!("### 🔹 {}", citation.title));
-            lines.push(format!("**Intent:** {}", infer_intent_explanation(citation)));
+            lines.push(format!(
+                "**Intent:** {}",
+                infer_intent_explanation(citation)
+            ));
             lines.push(format!("```rust\n{}\n```", citation.snippet));
-            lines.push(format!("> **Translation:** {}", infer_plain_english_logic(citation)));
+            lines.push(format!(
+                "> **Translation:** {}",
+                infer_plain_english_logic(citation)
+            ));
             lines.push(String::new());
         }
 
@@ -570,7 +581,10 @@ fn infer_intent_explanation(citation: &Citation) -> String {
     if citation.title.trim().is_empty() {
         "Provides supporting module logic.".to_string()
     } else {
-        format!("Implements `{}` behavior with source-backed logic.", citation.title)
+        format!(
+            "Implements `{}` behavior with source-backed logic.",
+            citation.title
+        )
     }
 }
 
@@ -707,7 +721,10 @@ fn is_grounded_summary(summary: &str, citations: &[Citation]) -> bool {
 fn fallback_summary(query: &str, citations: &[Citation]) -> String {
     if let Some(first) = citations.first() {
         let mut lines = vec![
-            format!("For \"{query}\", the best indexed context is in `{}`.", first.path),
+            format!(
+                "For \"{query}\", the best indexed context is in `{}`.",
+                first.path
+            ),
             "What I can confirm from local index:".to_string(),
         ];
         for citation in citations.iter().take(2) {

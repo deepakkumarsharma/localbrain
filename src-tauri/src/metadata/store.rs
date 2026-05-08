@@ -372,6 +372,24 @@ impl MetadataStore {
     }
 
     pub async fn get_tracked_files(&self, prefix: &str) -> Result<Vec<String>, MetadataError> {
+        if prefix.is_empty() {
+            let rows = sqlx::query(
+                "
+                SELECT path FROM files
+                WHERE status != ?
+                ",
+            )
+            .bind(FileChangeStatus::Deleted.as_str())
+            .fetch_all(&self.pool)
+            .await?;
+
+            let mut paths = Vec::new();
+            for row in rows {
+                paths.push(row.try_get("path")?);
+            }
+            return Ok(paths);
+        }
+
         let rows = sqlx::query(
             "
             SELECT path FROM files
@@ -562,10 +580,11 @@ fn canonicalize_for_workspace_check(path: &Path) -> Result<PathBuf, MetadataErro
 
 fn normalize_display_path(path: &Path, workspace_root: &Path) -> String {
     if path.is_absolute() {
-        if let Ok(relative) = path.strip_prefix(workspace_root) {
+        let normalized_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if let Ok(relative) = normalized_path.strip_prefix(workspace_root) {
             return normalize_relative_path(relative);
         } else {
-            return path.to_string_lossy().to_string();
+            return normalized_path.to_string_lossy().to_string();
         }
     }
 
@@ -702,5 +721,37 @@ mod tests {
             .expect("file should classify");
 
         assert_eq!(status, FileChangeStatus::Changed);
+    }
+
+    #[tokio::test]
+    async fn empty_prefix_returns_all_non_deleted_tracked_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        let app_path = temp_dir.path().join("App.tsx");
+        let readme_path = temp_dir.path().join("README.md");
+        fs::write(&app_path, "export const value = 1;").expect("app file should be written");
+        fs::write(&readme_path, "# Notes").expect("readme should be written");
+        let store = MetadataStore::open(temp_dir.path())
+            .await
+            .expect("metadata store should open");
+
+        store
+            .record_file_metadata("App.tsx")
+            .await
+            .expect("app metadata should record");
+        store
+            .record_file_metadata("README.md")
+            .await
+            .expect("readme metadata should record");
+        store
+            .mark_file_deleted("README.md")
+            .await
+            .expect("readme should be marked deleted");
+
+        let tracked = store
+            .get_tracked_files("")
+            .await
+            .expect("tracked files should load");
+
+        assert_eq!(tracked, vec!["App.tsx".to_string()]);
     }
 }

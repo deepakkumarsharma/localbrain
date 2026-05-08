@@ -179,10 +179,11 @@ export function RightPanel() {
   const complexity = dependentCount > 8 ? 'High' : dependentCount > 3 ? 'Medium' : 'Low';
   const suggestedQuestions = useMemo(
     () =>
-      buildSuggestedQuestions(activeSourcePath, selectedGraphNode?.label, selectedGraphNode?.kind).slice(
-        0,
-        3,
-      ),
+      buildSuggestedQuestions(
+        activeSourcePath,
+        selectedGraphNode?.label,
+        selectedGraphNode?.kind,
+      ).slice(0, 3),
     [activeSourcePath, selectedGraphNode?.kind, selectedGraphNode?.label],
   );
   return (
@@ -198,98 +199,107 @@ export function RightPanel() {
         {projectPath ? (
           <>
             <div className="relative overflow-hidden rounded-2xl border border-app-border bg-app-background p-3.5 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-panelSoft/60">
-                <FileCode2 className="h-5 w-5 text-app-muted" aria-hidden="true" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-app-border bg-app-panelSoft/60">
+                    <FileCode2 className="h-5 w-5 text-app-muted" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <div
+                      className="truncate text-[21px] font-black tracking-[-0.02em] text-app-text"
+                      title={focusedName}
+                    >
+                      {focusedName}
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-app-border bg-app-panelSoft px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.11em] text-app-text">
+                        {focusedKind}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.09em] text-app-muted">
+                        {providerSettings?.provider ?? 'local'} · v{appVersion}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-xl border border-app-border bg-app-panelSoft px-2.5 py-1.5 text-right">
+                  <div className="text-[9px] font-black uppercase tracking-[0.11em] text-app-muted">
+                    Cloud
+                  </div>
+                  <span
+                    className={`relative h-5 w-9 rounded-full border transition-colors ${providerSettings?.cloudEnabled ? 'border-app-accent bg-app-accent/35' : 'border-app-border bg-app-background'}`}
+                  >
+                    <span
+                      className={`absolute top-[1px] h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${providerSettings?.cloudEnabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+                    />
+                  </span>
+                  <div className="mt-0.5 text-[11px] font-extrabold text-app-text">
+                    {providerSettings?.cloudEnabled ? 'On' : 'Off'}
+                  </div>
+                </div>
               </div>
-              <div className="min-w-0">
-              <div
-                className="truncate text-[21px] font-black tracking-[-0.02em] text-app-text"
-                title={focusedName}
-              >
-                {focusedName}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <MetricPill label="Dependents" value={projectPath ? String(dependentCount) : '0'} />
+                <MetricPill label="Exports" value={String(exportCount)} />
+                <MetricPill label="Complexity" value={complexity} />
+                <MetricPill label="Status" value={projectPath ? 'Live' : 'Idle'} />
               </div>
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-app-border bg-app-panelSoft px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.11em] text-app-text">
-                  {focusedKind}
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-[0.09em] text-app-muted">
-                  {providerSettings?.provider ?? 'local'} · v{appVersion}
-                </span>
+              <div className="mt-2.5 rounded-xl border border-app-border bg-app-panelSoft/50 p-2">
+                <div className="grid grid-cols-[auto,1fr] items-center gap-2">
+                  <span className="text-app-muted font-black text-[9px] uppercase tracking-[0.11em]">
+                    File
+                  </span>
+                  <span className="flex items-center justify-end gap-1.5 text-[12px] font-semibold text-app-text">
+                    <span className="truncate font-mono">
+                      {projectPath ? activeSourcePath || '-' : '-'}
+                    </span>
+                    <Link2 className="h-3.5 w-3.5 text-app-muted" aria-hidden="true" />
+                  </span>
+                </div>
               </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-app-border bg-app-panelSoft px-2.5 py-1.5 text-right">
-              <div className="text-[9px] font-black uppercase tracking-[0.11em] text-app-muted">Cloud</div>
-              <span
-                className={`relative h-5 w-9 rounded-full border transition-colors ${providerSettings?.cloudEnabled ? 'border-app-accent bg-app-accent/35' : 'border-app-border bg-app-background'}`}
-              >
-                <span
-                  className={`absolute top-[1px] h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${providerSettings?.cloudEnabled ? 'translate-x-4' : 'translate-x-0.5'}`}
-                />
-              </span>
-              <div className="mt-0.5 text-[11px] font-extrabold text-app-text">
-                {providerSettings?.cloudEnabled ? 'On' : 'Off'}
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <MetricPill label="Dependents" value={projectPath ? String(dependentCount) : '0'} />
-            <MetricPill label="Exports" value={String(exportCount)} />
-            <MetricPill label="Complexity" value={complexity} />
-            <MetricPill label="Status" value={projectPath ? 'Live' : 'Idle'} />
-          </div>
-          <div className="mt-2.5 rounded-xl border border-app-border bg-app-panelSoft/50 p-2">
-            <div className="grid grid-cols-[auto,1fr] items-center gap-2">
-              <span className="text-app-muted font-black text-[9px] uppercase tracking-[0.11em]">File</span>
-              <span className="flex items-center justify-end gap-1.5 text-[12px] font-semibold text-app-text">
-                <span className="truncate font-mono">{projectPath ? activeSourcePath || '-' : '-'}</span>
-                <Link2 className="h-3.5 w-3.5 text-app-muted" aria-hidden="true" />
-              </span>
-            </div>
-          </div>
             </div>
 
             <div className="rounded-2xl border border-app-border bg-app-background p-3.5 shadow-sm">
-          <div className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-app-muted">
-            Knowledge Graph Enrichment
-          </div>
-          <div className="mb-2 flex items-start gap-2 rounded-lg border border-app-border bg-app-panelSoft/40 px-2.5 py-2 text-[12px] leading-6 text-app-text/95">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-app-muted" aria-hidden="true" />
-            <p>{summaryText}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
-            <InfoRow label="Purpose" value={purposeText} />
-            <InfoRow label="Dependents" value={String(dependentCount)} />
-            <InfoRow label="Last Author" value="Pending git integration" />
-            <InfoRow label="Test Status" value="Pending coverage mapping" />
-          </div>
+              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-app-muted">
+                Knowledge Graph Enrichment
+              </div>
+              <div className="mb-2 flex items-start gap-2 rounded-lg border border-app-border bg-app-panelSoft/40 px-2.5 py-2 text-[12px] leading-6 text-app-text/95">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-app-muted" aria-hidden="true" />
+                <p>{summaryText}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
+                <InfoRow label="Purpose" value={purposeText} />
+                <InfoRow label="Dependents" value={String(dependentCount)} />
+                <InfoRow label="Last Author" value="Pending git integration" />
+                <InfoRow label="Test Status" value="Pending coverage mapping" />
+              </div>
             </div>
 
             <div>
-          <button
-            className="mb-1.5 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left hover:bg-app-panelSoft/50"
-            type="button"
-            onClick={() => setRelationshipsCollapsed((current) => !current)}
-          >
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-app-muted">
-              RELATIONSHIPS
-            </span>
-            <ChevronDown
-              className={`h-4 w-4 text-app-muted transition-transform ${relationshipsCollapsed ? '-rotate-90' : 'rotate-0'}`}
-              aria-hidden="true"
-            />
-          </button>
-          <div className={`${relationshipsCollapsed ? 'hidden' : 'pt-0.5'}`}>
-            <span className="text-[12px] text-app-muted font-medium italic">
-              {!projectPath
-                ? 'Load a project to see relationships'
-                : graphContext.length === 0
-                  ? 'No graph context loaded'
-                  : `${graphContext.slice(0, 4).map((item) => item.symbol.name).join(', ')}${graphContext.length > 4 ? '…' : ''}`}
-            </span>
-          </div>
+              <button
+                className="mb-1.5 flex w-full items-center justify-between rounded-lg px-1 py-1 text-left hover:bg-app-panelSoft/50"
+                type="button"
+                onClick={() => setRelationshipsCollapsed((current) => !current)}
+              >
+                <span className="text-[10px] font-black uppercase tracking-[0.12em] text-app-muted">
+                  RELATIONSHIPS
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-app-muted transition-transform ${relationshipsCollapsed ? '-rotate-90' : 'rotate-0'}`}
+                  aria-hidden="true"
+                />
+              </button>
+              <div className={`${relationshipsCollapsed ? 'hidden' : 'pt-0.5'}`}>
+                <span className="text-[12px] text-app-muted font-medium italic">
+                  {!projectPath
+                    ? 'Load a project to see relationships'
+                    : graphContext.length === 0
+                      ? 'No graph context loaded'
+                      : `${graphContext
+                          .slice(0, 4)
+                          .map((item) => item.symbol.name)
+                          .join(', ')}${graphContext.length > 4 ? '…' : ''}`}
+                </span>
+              </div>
             </div>
           </>
         ) : (
@@ -366,7 +376,9 @@ export function RightPanel() {
                                   type="button"
                                   onClick={() => void handleEvidenceClick(citation)}
                                 >
-                                  <span className="font-mono">{sourcePathLabel(citation.path)}</span>
+                                  <span className="font-mono">
+                                    {sourcePathLabel(citation.path)}
+                                  </span>
                                   {citation.startLine ? (
                                     <span className="inline-flex items-center rounded-full border border-app-border bg-app-accent/15 px-1.5 py-0.5 font-mono text-[10px] font-extrabold tracking-[0.04em] text-app-accent">
                                       {lineChipLabel(citation.startLine, citation.endLine)}
@@ -447,7 +459,9 @@ export function RightPanel() {
           <span
             className={`h-2 w-2 rounded-full ${isLocalReady ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
           />
-          <span className={isLocalReady ? 'text-emerald-300' : 'text-red-300'}>Local Model Is Ready</span>
+          <span className={isLocalReady ? 'text-emerald-300' : 'text-red-300'}>
+            Local Model Is Ready
+          </span>
         </span>
       </div>
     </aside>
@@ -457,7 +471,9 @@ export function RightPanel() {
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="grid grid-cols-[auto,1fr] items-start gap-x-2 gap-y-0.5 py-0.5">
-      <span className="text-app-muted font-black text-[9px] uppercase tracking-[0.11em]">{label}</span>
+      <span className="text-app-muted font-black text-[9px] uppercase tracking-[0.11em]">
+        {label}
+      </span>
       <span
         className={`text-right text-app-text ${mono ? 'truncate font-mono text-[12px] font-medium' : 'whitespace-normal break-words font-semibold text-[12px]'}`}
       >

@@ -38,9 +38,9 @@ const ROOT_FOLDER = '';
 export function GraphView({ data, onSelectNode }: GraphViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const nodeLayoutRef = useRef<Map<string, { x: number; y: number; fx: number | null; fy: number | null }>>(
-    new Map(),
-  );
+  const nodeLayoutRef = useRef<
+    Map<string, { x: number; y: number; fx: number | null; fy: number | null }>
+  >(new Map());
   const zoomTransformRef = useRef(d3.zoomIdentity);
   const shouldAutoFitRef = useRef(true);
   const [mode, setMode] = useState<GraphMode>('structure');
@@ -391,14 +391,7 @@ export function GraphView({ data, onSelectNode }: GraphViewProps) {
       current.__graphFit = undefined;
       simulation.stop();
     };
-  }, [
-    expandedFolders,
-    mode,
-    onSelectNode,
-    renderData,
-    setActiveSourcePath,
-    showEdgeLabels,
-  ]);
+  }, [expandedFolders, mode, onSelectNode, renderData, setActiveSourcePath, showEdgeLabels]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 bg-app-background overflow-hidden">

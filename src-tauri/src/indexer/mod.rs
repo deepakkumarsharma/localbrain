@@ -32,6 +32,19 @@ pub struct IndexPathSummary {
     pub files: Vec<IndexFileSummary>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexProgress {
+    pub phase: String,
+    pub files_seen: usize,
+    pub files_total: usize,
+    pub files_changed: usize,
+    pub files_skipped: usize,
+    pub files_deleted: usize,
+    pub errors: usize,
+    pub current_path: Option<String>,
+}
+
 #[derive(Debug, Error)]
 pub enum IndexerError {
     #[error("metadata error: {0}")]
@@ -177,6 +190,15 @@ pub async fn index_path(
     metadata_store: &MetadataStore,
     graph_store: &GraphStore,
 ) -> Result<IndexPathSummary, IndexerError> {
+    index_path_with_progress(path, metadata_store, graph_store, |_| {}).await
+}
+
+pub async fn index_path_with_progress(
+    path: impl AsRef<Path>,
+    metadata_store: &MetadataStore,
+    graph_store: &GraphStore,
+    mut on_progress: impl FnMut(IndexProgress),
+) -> Result<IndexPathSummary, IndexerError> {
     let requested_path = path.as_ref();
     let paths = indexable_paths(requested_path, metadata_store)?;
     let run_id = metadata_store.begin_index_run().await?;
@@ -192,6 +214,18 @@ pub async fn index_path(
         run: None,
         files: Vec::new(),
     };
+    let files_total = paths.len();
+
+    on_progress(IndexProgress {
+        phase: "discovered".to_string(),
+        files_seen: 0,
+        files_total,
+        files_changed: 0,
+        files_skipped: 0,
+        files_deleted: 0,
+        errors: 0,
+        current_path: None,
+    });
 
     // Reconciliation phase: identify and mark deleted files
     if let Ok(previously_tracked) = metadata_store.get_tracked_files(&normalized_root).await {
@@ -242,6 +276,7 @@ pub async fn index_path(
     }
 
     for path in paths {
+        let current_path = metadata_store.normalize_path(&path);
         summary.files_seen += 1;
 
         match index_file(&path, metadata_store, graph_store).await {
@@ -263,6 +298,17 @@ pub async fn index_path(
                     .push(format!("{}: {}", path.display(), error));
             }
         }
+
+        on_progress(IndexProgress {
+            phase: "indexing".to_string(),
+            files_seen: summary.files_seen,
+            files_total,
+            files_changed: summary.files_changed,
+            files_skipped: summary.files_skipped,
+            files_deleted: summary.files_deleted,
+            errors: summary.errors.len(),
+            current_path: Some(current_path),
+        });
     }
 
     let status = if summary.errors.is_empty() {
@@ -279,6 +325,17 @@ pub async fn index_path(
         )
         .await?;
     summary.run = metadata_store.latest_index_run().await?;
+
+    on_progress(IndexProgress {
+        phase: "complete".to_string(),
+        files_seen: summary.files_seen,
+        files_total,
+        files_changed: summary.files_changed,
+        files_skipped: summary.files_skipped,
+        files_deleted: summary.files_deleted,
+        errors: summary.errors.len(),
+        current_path: None,
+    });
 
     Ok(summary)
 }
@@ -430,11 +487,15 @@ fn is_ignored_path(path: &Path) -> bool {
                 | "target"
                 | ".ssh"
                 | ".aws"
+                | "__snapshots__"
+                | "snapshots"
         ) || (value.starts_with('.') && !matches!(value.as_ref(), ".github" | ".vscode"))
     }) || path.file_name().is_some_and(|file_name| {
         let value = file_name.to_string_lossy();
         matches!(value.as_ref(), ".DS_Store" | "Thumbs.db" | ".npmrc")
             || value.starts_with(".env")
+            || value.ends_with("_snapshot.json")
+            || value.ends_with(".snap")
             || value.ends_with(".key")
             || value.ends_with(".pem")
             || value.ends_with(".p12")
@@ -566,6 +627,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reports_indexing_progress_for_each_file() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        fs::create_dir_all(temp_dir.path().join("src")).expect("src dir should be created");
+        fs::write(
+            temp_dir.path().join("src/App.tsx"),
+            "export function App() { return null; }",
+        )
+        .expect("tsx file should be written");
+        fs::write(temp_dir.path().join("README.md"), "# Hello")
+            .expect("markdown should be written");
+        let metadata_store = MetadataStore::open(temp_dir.path().join("metadata"))
+            .await
+            .expect("metadata store should open");
+        metadata_store
+            .set_workspace_root(temp_dir.path())
+            .expect("workspace root should be set");
+        let graph_store =
+            GraphStore::open(temp_dir.path().join("graph")).expect("graph store should open");
+        let mut progress = Vec::new();
+
+        let summary = super::index_path_with_progress(
+            temp_dir.path(),
+            &metadata_store,
+            &graph_store,
+            |event| {
+                progress.push(event);
+            },
+        )
+        .await
+        .expect("path should index");
+
+        assert_eq!(summary.files_seen, 2);
+        assert!(progress.iter().any(|event| event.phase == "discovered"));
+        assert!(progress.iter().any(|event| event.phase == "complete"));
+        assert_eq!(
+            progress
+                .iter()
+                .filter(|event| event.phase == "indexing")
+                .count(),
+            summary.files_seen
+        );
+        assert!(progress
+            .iter()
+            .any(|event| event.current_path.as_deref() == Some("src/App.tsx")));
+    }
+
+    #[tokio::test]
     async fn backfills_missing_graph_for_unchanged_supported_files() {
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let source_path = temp_dir.path().join("page_index.py");
@@ -618,6 +726,12 @@ mod tests {
         assert!(!is_indexable_file(Path::new("docs/design.pdf")));
         assert!(is_ignored_path(Path::new("node_modules/pkg/index.ts")));
         assert!(is_ignored_path(Path::new(".localbrain/metadata.db")));
+        assert!(is_ignored_path(Path::new(
+            "packages/db/src/migrations/meta/0040_snapshot.json"
+        )));
+        assert!(is_ignored_path(Path::new(
+            "src/components/__snapshots__/App.test.tsx.snap"
+        )));
         assert!(!is_ignored_path(Path::new("src/App.tsx")));
     }
 }

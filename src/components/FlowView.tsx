@@ -1,4 +1,5 @@
 import { TrendingUp } from 'lucide-react';
+import { getLoadingProgress } from '../lib/progress';
 import { useAppStore } from '../store/useAppStore';
 
 interface FlowStep {
@@ -13,6 +14,7 @@ export function FlowView() {
     projectPath,
     isProjectLoading,
     projectStatus,
+    indexProgress,
     activeSourcePath,
     indexPathSummary,
     wikiSummary,
@@ -20,6 +22,7 @@ export function FlowView() {
     providerSettings,
     chatMessages,
   } = useAppStore();
+  const loadingProgress = getLoadingProgress(indexProgress, projectStatus);
 
   if (!projectPath) {
     return (
@@ -45,19 +48,40 @@ export function FlowView() {
             <TrendingUp className="h-5 w-5 text-app-accent" aria-hidden="true" />
             Localbrain Request Flow
           </h2>
-          <div className="rounded-xl border border-app-border bg-app-panel p-5 text-sm text-app-muted">
-            <div className="mb-4 flex items-center gap-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-blue-400 animate-pulse" />
-              <span className="h-2.5 w-2.5 rounded-full bg-violet-400 animate-pulse [animation-delay:180ms]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse [animation-delay:360ms]" />
-              <span className="text-[12px] font-black uppercase tracking-widest text-app-muted">
-                Processing Workspace
+          <div className="rounded-xl border border-app-border bg-app-panel p-5 text-sm text-app-muted shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flow-status-dot h-2.5 w-2.5 rounded-full bg-app-accent" />
+                <span className="flow-status-dot h-2.5 w-2.5 rounded-full bg-app-success [animation-delay:220ms]" />
+                <span className="flow-status-dot h-2.5 w-2.5 rounded-full bg-app-warning [animation-delay:440ms]" />
+                <span className="text-[12px] font-black uppercase tracking-widest text-app-muted">
+                  Processing Workspace
+                </span>
+              </div>
+              <span className="rounded-full border border-app-border bg-app-panelSoft px-2.5 py-1 font-mono text-xs font-semibold text-app-text">
+                {loadingProgress.percentLabel}
               </span>
             </div>
-            <div className="mb-3 h-2 overflow-hidden rounded-full bg-app-background">
-              <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-400 via-violet-400 to-emerald-400 flow-loader-track" />
+            <div
+              className="mb-3 h-2.5 overflow-hidden rounded-full bg-app-panelSoft"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(loadingProgress.percent)}
+            >
+              <div
+                className="flow-progress-fill h-full rounded-full bg-app-accent"
+                style={{ width: `${loadingProgress.percent}%` }}
+              />
             </div>
-            {projectStatus ?? 'Project is loading...'}
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span>{loadingProgress.detail}</span>
+              {loadingProgress.currentFile ? (
+                <span className="truncate font-mono text-xs text-app-text">
+                  · {loadingProgress.currentFile}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -151,9 +175,9 @@ export function FlowView() {
         </div>
         <section className="min-w-0">
           <div className="relative">
-            <div className="absolute bottom-6 left-[27px] top-6 w-px overflow-hidden rounded-full bg-gradient-to-b from-app-border via-app-muted/25 to-app-border">
-              <span className="flow-line-shot absolute left-0 top-0 h-10 w-full bg-gradient-to-b from-transparent via-blue-400 to-transparent opacity-90" />
-              <span className="flow-line-shot-delay absolute left-0 top-0 h-10 w-full bg-gradient-to-b from-transparent via-violet-400 to-transparent opacity-85" />
+            <div className="absolute bottom-6 left-[27px] top-6 w-px overflow-hidden rounded-full bg-app-border/70">
+              <span className="flow-line-shot absolute left-0 top-0 h-10 w-full bg-app-accent/70 opacity-90" />
+              <span className="flow-line-shot-delay absolute left-0 top-0 h-10 w-full bg-app-accent/40 opacity-85" />
             </div>
             <div className="relative space-y-8">
               {steps.map((step, index) => (

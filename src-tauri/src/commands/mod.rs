@@ -1,5 +1,5 @@
 use crate::graph::{GraphContext, GraphIngestSummary, GraphStore, GraphView};
-use crate::indexer::{IndexFileSummary, IndexPathSummary};
+use crate::indexer::{IndexFileSummary, IndexPathSummary, IndexProgress};
 use crate::llm::ChatAnswer;
 use crate::metadata::{FileChangeStatus, FileMetadata, IndexRunSummary, MetadataStore};
 use crate::parser::CodeSymbol;
@@ -8,6 +8,15 @@ use crate::search::{SearchIndexSummary, SearchResult};
 use crate::settings::{LlmProvider, ProviderSettings, SettingsStore};
 use crate::wiki::WikiSummary;
 use std::path::{Path, PathBuf};
+use tauri::Emitter;
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexProgressEvent {
+    pub run_id: Option<u64>,
+    #[serde(flatten)]
+    pub progress: IndexProgress,
+}
 
 #[tauri::command]
 pub fn get_app_version() -> &'static str {
@@ -125,12 +134,16 @@ pub async fn index_file(
 #[tauri::command]
 pub async fn index_path(
     path: String,
+    run_id: Option<u64>,
+    window: tauri::Window,
     metadata_store: tauri::State<'_, MetadataStore>,
     graph_store: tauri::State<'_, GraphStore>,
 ) -> Result<IndexPathSummary, String> {
-    crate::indexer::index_path(path, &metadata_store, &graph_store)
-        .await
-        .map_err(|error| error.to_string())
+    crate::indexer::index_path_with_progress(path, &metadata_store, &graph_store, |progress| {
+        let _ = window.emit("index-progress", IndexProgressEvent { run_id, progress });
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

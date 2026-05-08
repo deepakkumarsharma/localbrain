@@ -731,11 +731,21 @@ fn is_ignored_path(path: &Path) -> bool {
         let value = component.as_os_str().to_string_lossy();
         matches!(
             value.as_ref(),
-            ".git" | ".localbrain" | "node_modules" | "vendor" | "dist" | "build" | "target"
+            ".git"
+                | ".localbrain"
+                | "node_modules"
+                | "vendor"
+                | "dist"
+                | "build"
+                | "target"
+                | "__snapshots__"
+                | "snapshots"
         ) || (value.starts_with('.') && !matches!(value.as_ref(), ".github" | ".vscode"))
     }) || path.file_name().is_some_and(|file_name| {
         let value = file_name.to_string_lossy();
         value.starts_with(".env")
+            || value.ends_with("_snapshot.json")
+            || value.ends_with(".snap")
             || value.ends_with(".key")
             || value.ends_with(".pem")
             || value.ends_with(".p12")

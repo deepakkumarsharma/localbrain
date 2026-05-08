@@ -149,15 +149,6 @@ input {
   }
 }
 
-@keyframes flow-loader-track {
-  0% {
-    transform: translateX(-130%);
-  }
-  100% {
-    transform: translateX(320%);
-  }
-}
-
 .flow-line-shot {
   animation: flow-line-shot 2.1s ease-in-out infinite;
 }
@@ -167,8 +158,27 @@ input {
   animation-delay: 1s;
 }
 
-.flow-loader-track {
-  animation: flow-loader-track 1.8s linear infinite;
+.flow-progress-fill {
+  box-shadow: 0 0 14px rgb(var(--color-app-accent) / 0.35);
+  min-width: 8px;
+  transition: width 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: width;
+}
+
+@keyframes flow-status-dot {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.flow-status-dot {
+  animation: flow-status-dot 2.2s ease-in-out infinite;
 }
 
 @keyframes flow-node-pulse {
@@ -204,4 +214,18 @@ input {
 
 .loader-logo-pulse {
   animation: loader-logo-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-line-shot,
+  .flow-line-shot-delay,
+  .flow-node-pulse,
+  .flow-status-dot,
+  .loader-logo-pulse {
+    animation: none;
+  }
+
+  .flow-progress-fill {
+    transition: none;
+  }
 }
