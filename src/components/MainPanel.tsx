@@ -5,7 +5,7 @@ import { GraphView } from './GraphView';
 import { WikiView } from './WikiView';
 import type { GraphViewData } from '../lib/graph';
 import { getGraphView } from '../lib/graph';
-import { generate_wiki } from '../lib/wiki';
+import { generate_wiki, getWikiContent } from '../lib/wiki';
 import { useAppStore } from '../store/useAppStore';
 
 const views = [
@@ -16,6 +16,8 @@ const views = [
 
 export function MainPanel() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [isGeneratingWiki, setIsGeneratingWiki] = useState(false);
+  const [isExportingWiki, setIsExportingWiki] = useState(false);
   const {
     activePanel,
     activeSourcePath,
@@ -47,15 +49,44 @@ export function MainPanel() {
   }, [activePanel, activeSourcePath, handleOpenGraph]);
 
   async function handleExportWiki() {
-    if (!projectPath || isProjectLoading) {
+    if (!projectPath || isProjectLoading || isExportingWiki) {
       return;
     }
     try {
+      setIsExportingWiki(true);
+      const content = await getWikiContent(activeSourcePath);
+      if (!content) {
+        setWikiError('No wiki content available yet. Generate wiki first.');
+        return;
+      }
+      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = wikiFileName(activeSourcePath);
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setActivePanel('wiki');
+    } catch (error) {
+      setWikiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsExportingWiki(false);
+    }
+  }
+
+  async function handleGenerateWiki() {
+    if (!projectPath || isProjectLoading || isGeneratingWiki) {
+      return;
+    }
+    try {
+      setIsGeneratingWiki(true);
       const summary = await generate_wiki(projectPath);
       setWikiResult(summary);
       setActivePanel('wiki');
     } catch (error) {
       setWikiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsGeneratingWiki(false);
     }
   }
 
@@ -95,9 +126,15 @@ export function MainPanel() {
     },
     {
       label: 'Export Wiki',
-      detail: 'Generate wiki pages from the current workspace',
+      detail: 'Export wiki markdown for the selected source file',
       icon: Download,
       run: () => void handleExportWiki(),
+    },
+    {
+      label: 'Generate Wiki',
+      detail: 'Generate wiki pages from the current workspace',
+      icon: FileText,
+      run: () => void handleGenerateWiki(),
     },
   ].filter((item) => (item.label === 'Export Wiki' ? Boolean(projectPath) : true));
 
@@ -135,15 +172,28 @@ export function MainPanel() {
           <button
             className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"
             type="button"
-            onClick={handleExportWiki}
-            disabled={!projectPath || isProjectLoading}
+            onClick={handleGenerateWiki}
+            disabled={!projectPath || isProjectLoading || isGeneratingWiki}
           >
-            {isProjectLoading ? (
+            {isGeneratingWiki ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileText className="h-4 w-4" aria-hidden="true" />
+            )}
+            {isGeneratingWiki ? 'Generating Wiki...' : 'Generate Wiki'}
+          </button>
+          <button
+            className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"
+            type="button"
+            onClick={handleExportWiki}
+            disabled={!projectPath || isProjectLoading || isExportingWiki}
+          >
+            {isExportingWiki ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <Download className="h-4 w-4" aria-hidden="true" />
             )}
-            {isProjectLoading ? 'Export Wiki (loading...)' : 'Export Wiki'}
+            {isExportingWiki ? 'Exporting Wiki...' : 'Export Wiki'}
           </button>
           <button
             className="flex h-9 items-center gap-2 rounded-lg border border-app-border bg-app-panel px-3.5 text-[13px] font-bold hover:bg-app-panelSoft transition-colors"
@@ -160,7 +210,9 @@ export function MainPanel() {
         {activePanel === 'graph' ? (
           <GraphView data={graphView} onSelectNode={setSelectedGraphNode} />
         ) : null}
-        {activePanel === 'wiki' ? <WikiView /> : null}
+        {activePanel === 'wiki' ? (
+          <WikiView onGenerateWiki={handleGenerateWiki} isGeneratingWiki={isGeneratingWiki} />
+        ) : null}
         {activePanel === 'flow' ? <FlowView /> : null}
       </section>
 
@@ -220,6 +272,13 @@ export function MainPanel() {
       ) : null}
     </main>
   );
+}
+
+function wikiFileName(path: string) {
+  if (!path) return 'wiki.md';
+  const normalized = path.replace(/[\\/]/g, '/');
+  const file = normalized.split('/').filter(Boolean).pop() || normalized;
+  return `${file}.md`;
 }
 
 function Legend({ label, colorVar }: { label: string; colorVar: string }) {

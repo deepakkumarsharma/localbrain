@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import { getWikiContent } from '../lib/wiki';
 import { useAppStore } from '../store/useAppStore';
 
-export function WikiView() {
+interface WikiViewProps {
+  onGenerateWiki: () => void;
+  isGeneratingWiki: boolean;
+}
+
+export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
   const { wikiSummary, activeSourcePath, setActivePanel, setSelectedGraphNode, graphView } =
     useAppStore();
   const [content, setContent] = useState<string | null>(null);
@@ -116,7 +121,7 @@ export function WikiView() {
             <div className="rounded-2xl border border-app-border bg-app-panel p-0 shadow-[0_20px_35px_-26px_rgba(0,0,0,0.45)] overflow-hidden">
               {content ? (
                 <>
-                  <div className="border-b border-app-border bg-gradient-to-r from-blue-500/10 via-violet-500/10 to-emerald-500/10 px-7 py-3 text-[11px] font-black uppercase tracking-widest text-app-muted">
+                  <div className="border-b border-app-border bg-app-panelSoft px-7 py-3 text-[11px] font-black uppercase tracking-widest text-app-muted">
                     Developer Overview
                   </div>
                   <article
@@ -137,12 +142,21 @@ export function WikiView() {
                     Generate wiki from the top action bar to create source-backed documentation for
                     this file.
                   </p>
-                  <button
-                    className="mt-6 rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors"
-                    onClick={() => setActivePanel('graph')}
-                  >
-                    Switch to Graph View
-                  </button>
+                  <div className="mt-6 flex items-center gap-3">
+                    <button
+                      className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors disabled:opacity-60"
+                      onClick={onGenerateWiki}
+                      disabled={isGeneratingWiki}
+                    >
+                      {isGeneratingWiki ? 'Generating Wiki...' : 'Generate Wiki For Workspace'}
+                    </button>
+                    <button
+                      className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors"
+                      onClick={() => setActivePanel('graph')}
+                    >
+                      Switch to Graph View
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -245,7 +259,7 @@ export function WikiView() {
           margin: 1rem 0;
           padding: 0.9rem 1rem;
           border-left: 3px solid rgb(var(--color-app-accent));
-          background: linear-gradient(90deg, rgba(var(--color-app-accent),0.12), rgb(var(--color-app-panel-soft)));
+          background: rgba(var(--color-app-accent), 0.08);
           border-radius: 0.6rem;
           color: rgb(var(--color-app-text));
         }
@@ -288,7 +302,7 @@ export function WikiView() {
           text-align: left;
         }
         .wiki-markdown th {
-          background: linear-gradient(90deg, rgba(var(--color-app-accent),0.12), rgb(var(--color-app-panel-soft)));
+          background: rgb(var(--color-app-panel-soft));
           color: rgb(var(--color-app-text));
           font-weight: 700;
         }

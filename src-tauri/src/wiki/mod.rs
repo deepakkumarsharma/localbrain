@@ -7,7 +7,6 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::graph::{GraphError, GraphStore};
-use crate::indexer::{index_path, IndexerError};
 use crate::metadata::{MetadataError, MetadataStore};
 use crate::parser::{CodeSymbol, SymbolKind};
 
@@ -25,8 +24,6 @@ pub struct WikiSummary {
 pub enum WikiError {
     #[error("metadata error: {0}")]
     Metadata(#[from] MetadataError),
-    #[error("indexer error: {0}")]
-    Indexer(#[from] IndexerError),
     #[error("graph error: {0}")]
     Graph(#[from] GraphError),
     #[error("filesystem operation failed: {0}")]
@@ -44,24 +41,20 @@ pub async fn generate_wiki(
     let output_dir = wiki_output_dir(&root);
     fs::create_dir_all(&output_dir)?;
 
-    let index_summary = index_path(requested_path, metadata_store, graph_store).await?;
+    let tracked_files = metadata_store.get_tracked_files(&normalized_root).await?;
     let mut pages = BTreeMap::new();
-    let mut errors = index_summary.errors;
+    let mut errors = Vec::new();
 
-    for file in index_summary.files {
-        if file.status.as_str() == "deleted" {
-            continue;
-        }
-
-        match graph_store.get_symbols_for_file(&file.path) {
+    for file_path in tracked_files {
+        match graph_store.get_symbols_for_file(&file_path) {
             Ok(symbols) => {
                 if symbols.is_empty() {
                     continue;
                 }
 
-                pages.insert(file.path.clone(), symbols);
+                pages.insert(file_path.clone(), symbols);
             }
-            Err(error) => errors.push(format!("{}: {}", file.path, error)),
+            Err(error) => errors.push(format!("{}: {}", file_path, error)),
         }
     }
 
@@ -382,6 +375,7 @@ fn wiki_file_name(path: &str) -> String {
 mod tests {
     use super::{generate_wiki, wiki_file_name};
     use crate::graph::GraphStore;
+    use crate::indexer::index_path;
     use crate::metadata::MetadataStore;
     use std::fs;
 
@@ -400,6 +394,9 @@ mod tests {
         let graph_store =
             GraphStore::open(temp_dir.path().join("graph")).expect("graph store should open");
 
+        index_path(temp_dir.path(), &metadata_store, &graph_store)
+            .await
+            .expect("workspace should index before wiki generation");
         let summary = generate_wiki(temp_dir.path(), &metadata_store, &graph_store)
             .await
             .expect("wiki should generate");

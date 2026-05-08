@@ -1,6 +1,7 @@
 pub const CREATE_FILES_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS files (
   path TEXT PRIMARY KEY,
+  workspace_root TEXT NOT NULL DEFAULT '',
   language TEXT,
   size_bytes INTEGER NOT NULL,
   modified_at TEXT,
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
   path TEXT PRIMARY KEY,
   dimensions INTEGER NOT NULL,
   vector_json TEXT NOT NULL,
+  vector_blob BLOB,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(path) REFERENCES files(path) ON DELETE CASCADE
 )";
@@ -58,6 +60,7 @@ CREATE TABLE IF NOT EXISTS chunk_embeddings (
   chunk_id TEXT NOT NULL,
   dimensions INTEGER NOT NULL,
   vector_json TEXT NOT NULL,
+  vector_blob BLOB,
   updated_at TEXT NOT NULL,
   PRIMARY KEY(path, chunk_id),
   FOREIGN KEY(path, chunk_id) REFERENCES search_chunks(path, chunk_id) ON DELETE CASCADE

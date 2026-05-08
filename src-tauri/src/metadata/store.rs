@@ -110,7 +110,45 @@ impl MetadataStore {
         sqlx::query(CREATE_CHUNK_EMBEDDINGS_TABLE)
             .execute(&self.pool)
             .await?;
+        self.ensure_column_exists("files", "workspace_root", "TEXT NOT NULL DEFAULT ''")
+            .await?;
+        self.ensure_column_exists("embeddings", "vector_blob", "BLOB")
+            .await?;
+        self.ensure_column_exists("chunk_embeddings", "vector_blob", "BLOB")
+            .await?;
+        let workspace_root = self.current_workspace_root_string()?;
+        sqlx::query(
+            "
+            UPDATE files
+            SET workspace_root = ?
+            WHERE workspace_root IS NULL OR workspace_root = ''
+            ",
+        )
+        .bind(workspace_root)
+        .execute(&self.pool)
+        .await?;
 
+        Ok(())
+    }
+
+    async fn ensure_column_exists(
+        &self,
+        table: &str,
+        column: &str,
+        column_type: &str,
+    ) -> Result<(), MetadataError> {
+        let pragma = format!("PRAGMA table_info({table})");
+        let rows = sqlx::query(&pragma).fetch_all(&self.pool).await?;
+        let exists = rows.iter().any(|row| {
+            row.try_get::<String, _>("name")
+                .map(|name| name == column)
+                .unwrap_or(false)
+        });
+
+        if !exists {
+            let alter = format!("ALTER TABLE {table} ADD COLUMN {column} {column_type}");
+            sqlx::query(&alter).execute(&self.pool).await?;
+        }
         Ok(())
     }
 
@@ -147,6 +185,13 @@ impl MetadataStore {
         normalize_display_path(path.as_ref(), &workspace_root)
     }
 
+    pub fn workspace_root_path(&self) -> Result<PathBuf, MetadataError> {
+        self.workspace_root
+            .read()
+            .map(|root| root.clone())
+            .map_err(|_| MetadataError::InvalidPath("workspace_root_lock".to_string()))
+    }
+
     pub fn set_workspace_root(&self, path: impl AsRef<Path>) -> Result<String, MetadataError> {
         let canonical = canonicalize_existing_dir(path.as_ref())?;
         let mut root = self
@@ -159,6 +204,11 @@ impl MetadataStore {
 
     pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    fn current_workspace_root_string(&self) -> Result<String, MetadataError> {
+        let workspace_root = self.workspace_root_path()?;
+        Ok(workspace_root.to_string_lossy().to_string())
     }
 
     pub async fn scan_file(&self, path: impl AsRef<Path>) -> Result<FileMetadata, MetadataError> {
@@ -187,6 +237,7 @@ impl MetadataStore {
             "
             INSERT INTO files (
               path,
+              workspace_root,
               language,
               size_bytes,
               modified_at,
@@ -194,8 +245,9 @@ impl MetadataStore {
               last_indexed_at,
               status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
+              workspace_root = excluded.workspace_root,
               language = excluded.language,
               size_bytes = excluded.size_bytes,
               modified_at = excluded.modified_at,
@@ -205,6 +257,7 @@ impl MetadataStore {
             ",
         )
         .bind(&metadata.path)
+        .bind(self.current_workspace_root_string()?)
         .bind(&metadata.language)
         .bind(metadata.size_bytes)
         .bind(&metadata.modified_at)
@@ -219,14 +272,16 @@ impl MetadataStore {
 
     pub async fn get_file(&self, path: &str) -> Result<Option<FileMetadata>, MetadataError> {
         let path = self.normalize_path(path);
+        let workspace_root = self.current_workspace_root_string()?;
         let row = sqlx::query(
             "
             SELECT path, language, size_bytes, modified_at, content_hash, last_indexed_at, status
             FROM files
-            WHERE path = ?
+            WHERE path = ? AND workspace_root = ?
             ",
         )
         .bind(path)
+        .bind(workspace_root)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -340,15 +395,36 @@ impl MetadataStore {
     }
 
     pub async fn get_tracked_files(&self, prefix: &str) -> Result<Vec<String>, MetadataError> {
+        let workspace_root = self.current_workspace_root_string()?;
+        if prefix.is_empty() {
+            let rows = sqlx::query(
+                "
+                SELECT path FROM files
+                WHERE status != ? AND workspace_root = ?
+                ",
+            )
+            .bind(FileChangeStatus::Deleted.as_str())
+            .bind(&workspace_root)
+            .fetch_all(&self.pool)
+            .await?;
+
+            let mut paths = Vec::new();
+            for row in rows {
+                paths.push(row.try_get("path")?);
+            }
+            return Ok(paths);
+        }
+
         let rows = sqlx::query(
             "
             SELECT path FROM files
-            WHERE (path = ? OR path LIKE ?) AND status != ?
+            WHERE (path = ? OR path LIKE ?) AND status != ? AND workspace_root = ?
             ",
         )
         .bind(prefix)
         .bind(format!("{}/%", prefix))
         .bind(FileChangeStatus::Deleted.as_str())
+        .bind(workspace_root)
         .fetch_all(&self.pool)
         .await?;
 
@@ -530,10 +606,11 @@ fn canonicalize_for_workspace_check(path: &Path) -> Result<PathBuf, MetadataErro
 
 fn normalize_display_path(path: &Path, workspace_root: &Path) -> String {
     if path.is_absolute() {
-        if let Ok(relative) = path.strip_prefix(workspace_root) {
+        let normalized_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if let Ok(relative) = normalized_path.strip_prefix(workspace_root) {
             return normalize_relative_path(relative);
         } else {
-            return path.to_string_lossy().to_string();
+            return normalized_path.to_string_lossy().to_string();
         }
     }
 
@@ -670,5 +747,37 @@ mod tests {
             .expect("file should classify");
 
         assert_eq!(status, FileChangeStatus::Changed);
+    }
+
+    #[tokio::test]
+    async fn empty_prefix_returns_all_non_deleted_tracked_files() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+        let app_path = temp_dir.path().join("App.tsx");
+        let readme_path = temp_dir.path().join("README.md");
+        fs::write(&app_path, "export const value = 1;").expect("app file should be written");
+        fs::write(&readme_path, "# Notes").expect("readme should be written");
+        let store = MetadataStore::open(temp_dir.path())
+            .await
+            .expect("metadata store should open");
+
+        store
+            .record_file_metadata("App.tsx")
+            .await
+            .expect("app metadata should record");
+        store
+            .record_file_metadata("README.md")
+            .await
+            .expect("readme metadata should record");
+        store
+            .mark_file_deleted("README.md")
+            .await
+            .expect("readme should be marked deleted");
+
+        let tracked = store
+            .get_tracked_files("")
+            .await
+            .expect("tracked files should load");
+
+        assert_eq!(tracked, vec!["App.tsx".to_string()]);
     }
 }

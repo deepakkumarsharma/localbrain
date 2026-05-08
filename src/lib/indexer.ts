@@ -30,12 +30,24 @@ export interface IndexPathSummary {
   files: IndexFileSummary[];
 }
 
+export interface IndexProgressEvent {
+  runId: number | null;
+  phase: string;
+  filesSeen: number;
+  filesTotal: number;
+  filesChanged: number;
+  filesSkipped: number;
+  filesDeleted: number;
+  errors: number;
+  currentPath: string | null;
+}
+
 export async function indexFile(path: string) {
   return invoke<IndexFileSummary>('index_file', { path });
 }
 
-export async function indexPath(path: string) {
-  return invoke<IndexPathSummary>('index_path', { path });
+export async function indexPath(path: string, runId?: number) {
+  return invoke<IndexPathSummary>('index_path', { path, runId });
 }
 
 export async function setWorkspaceRoot(path: string) {

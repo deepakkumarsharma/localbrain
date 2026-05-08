@@ -79,7 +79,14 @@ fn should_emit_path(path: &Path) -> bool {
         let value = component.as_os_str().to_string_lossy();
         matches!(
             value.as_ref(),
-            ".git" | "node_modules" | "target" | "dist" | ".ssh" | ".localbrain"
+            ".git"
+                | "node_modules"
+                | "target"
+                | "dist"
+                | ".ssh"
+                | ".localbrain"
+                | "__snapshots__"
+                | "snapshots"
         )
     }) {
         return false;
@@ -87,7 +94,10 @@ fn should_emit_path(path: &Path) -> bool {
 
     if path.file_name().is_some_and(|file_name| {
         let value = file_name.to_string_lossy();
-        value == ".DS_Store" || value.starts_with(".env")
+        value == ".DS_Store"
+            || value.starts_with(".env")
+            || value.ends_with("_snapshot.json")
+            || value.ends_with(".snap")
     }) {
         return false;
     }
@@ -142,6 +152,12 @@ mod tests {
         assert!(!should_emit_path(Path::new(".env.local")));
         assert!(!should_emit_path(Path::new(".ssh/config")));
         assert!(!should_emit_path(Path::new("dist/assets/index.js")));
+        assert!(!should_emit_path(Path::new(
+            "packages/db/src/migrations/meta/0040_snapshot.json"
+        )));
+        assert!(!should_emit_path(Path::new(
+            "src/components/__snapshots__/App.test.tsx.snap"
+        )));
     }
 
     #[test]

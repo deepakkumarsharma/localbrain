@@ -18,8 +18,8 @@ use commands::{
     get_file_metadata, get_graph_context, get_graph_symbols, get_graph_view, get_index_status,
     get_local_llm_status, get_provider_settings, get_wiki_content, hybrid_search, index_file,
     index_file_to_graph, index_path, parse_source_file, rebuild_search_index, record_file_metadata,
-    resolve_project_root, search_code, set_local_model_path, set_provider, set_workspace_root,
-    start_local_llm, stop_local_llm,
+    resolve_project_root, search_code, set_embedding_model_path, set_local_model_path,
+    set_provider, set_workspace_root, start_local_llm, stop_local_llm,
 };
 use settings::SettingsStore;
 use tauri::{Manager, RunEvent};
@@ -79,6 +79,7 @@ fn main() {
             search_code,
             get_local_llm_status,
             set_local_model_path,
+            set_embedding_model_path,
             set_provider,
             set_workspace_root,
             start_agent_api,

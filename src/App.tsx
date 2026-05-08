@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { ErrorBanner } from './components/ErrorBanner';
 import { MainPanel } from './components/MainPanel';
@@ -6,16 +7,67 @@ import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
 import { initFileWatcher } from './lib/fileWatcher';
 import { indexPath, resolveProjectRoot, setWorkspaceRoot } from './lib/indexer';
+import type { IndexPathSummary, IndexProgressEvent } from './lib/indexer';
 import { clearSearchIndex, rebuildSearchIndex } from './lib/search';
+import type { SearchIndexSummary } from './lib/search';
 import { generate_wiki } from './lib/wiki';
+import type { WikiSummary } from './lib/wiki';
 import { useAppStore } from './store/useAppStore';
+
+const DEFAULT_STEP_TIMEOUT_MS = 120_000;
+const INDEXING_TIMEOUT_MS = 1_800_000;
+const SEARCH_REBUILD_TIMEOUT_MS = 600_000;
+const WIKI_TIMEOUT_MS = 600_000;
+const LAST_PROJECT_PATH_KEY = 'localbrain.lastProjectPath';
+
+interface ProjectSnapshot {
+  indexPathSummary: IndexPathSummary;
+  searchIndexSummary: SearchIndexSummary;
+  wikiSummary: WikiSummary;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+  timeoutMs = DEFAULT_STEP_TIMEOUT_MS,
+) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs / 1000}s`)),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function indexingStatus(progress: IndexProgressEvent) {
+  if (progress.filesTotal === 0) {
+    return '20% · Discovering indexable files...';
+  }
+
+  const ratio = Math.min(progress.filesSeen / progress.filesTotal, 1);
+  const percent = Math.min(54, 20 + Math.floor(ratio * 34));
+  const currentFile = progress.currentPath?.split('/').pop();
+  const suffix = currentFile ? ` · ${currentFile}` : '';
+  return `${percent}% · Indexed ${progress.filesSeen}/${progress.filesTotal} files${suffix}`;
+}
 
 export default function App() {
   const {
     setAppVersion,
     theme,
     toggleTheme,
+    projectPath,
     setIndexPathResult,
+    setIndexProgress,
     setIndexError,
     setWikiError,
     setWikiResult,
@@ -26,10 +78,13 @@ export default function App() {
     clearProjectData,
   } = useAppStore();
   const [sidebarWidth, setSidebarWidth] = useState(400);
-  const [rightPanelWidth, setRightPanelWidth] = useState(450);
+  const [rightPanelWidth, setRightPanelWidth] = useState(600);
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
   const watcherUnlistenRef = useRef<(() => void) | null>(null);
+  const projectLoadRunRef = useRef(0);
+  const lastProgressUpdateRef = useRef({ at: 0, filesSeen: -1 });
+  const projectSnapshotCacheRef = useRef<Map<string, ProjectSnapshot>>(new Map());
 
   useEffect(() => {
     void invoke<string>('get_app_version')
@@ -46,8 +101,58 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void listen<IndexProgressEvent>('index-progress', (event) => {
+      const progress = event.payload;
+      if (progress.runId !== projectLoadRunRef.current) {
+        return;
+      }
+      if (!useAppStore.getState().isProjectLoading) {
+        return;
+      }
+      const now = Date.now();
+      const isComplete =
+        progress.phase === 'complete' ||
+        (progress.filesTotal > 0 && progress.filesSeen >= progress.filesTotal);
+      const shouldThrottle =
+        !isComplete &&
+        now - lastProgressUpdateRef.current.at < 140 &&
+        progress.filesSeen !== lastProgressUpdateRef.current.filesSeen;
+
+      if (shouldThrottle) {
+        return;
+      }
+
+      lastProgressUpdateRef.current = { at: now, filesSeen: progress.filesSeen };
+      setIndexProgress(progress);
+      setProjectLoading(true, indexingStatus(progress));
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [setIndexProgress, setProjectLoading]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    if (projectPath) {
+      window.localStorage.setItem(LAST_PROJECT_PATH_KEY, projectPath);
+    } else {
+      window.localStorage.removeItem(LAST_PROJECT_PATH_KEY);
+    }
+  }, [projectPath]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -90,7 +195,7 @@ export default function App() {
       const newWidth = Math.min(Math.max(200, e.clientX), 400);
       setSidebarWidth(newWidth);
     } else if (isResizingRightPanel.current) {
-      const newWidth = Math.min(Math.max(250, window.innerWidth - e.clientX), 400);
+      const newWidth = Math.min(Math.max(400, window.innerWidth - e.clientX), 1000);
       setRightPanelWidth(newWidth);
     }
   }, []);
@@ -106,45 +211,103 @@ export default function App() {
 
   const loadProject = useCallback(
     async (selectedPath: string) => {
-      clearProjectData();
-      setProjectLoading(true, 'Preparing workspace...');
+      const runId = projectLoadRunRef.current + 1;
+      projectLoadRunRef.current = runId;
+      lastProgressUpdateRef.current = { at: 0, filesSeen: -1 };
+      const isCurrentRun = () => projectLoadRunRef.current === runId;
+      if (watcherUnlistenRef.current) {
+        watcherUnlistenRef.current();
+        watcherUnlistenRef.current = null;
+      }
+      setProjectLoading(true, '5% · Preparing workspace...');
       setIndexError(null);
       setWikiError(null);
       setSearchError(null);
 
       try {
-        const path = await resolveProjectRoot(selectedPath);
+        const path = await withTimeout(resolveProjectRoot(selectedPath), 'Project root detection');
+        if (!isCurrentRun()) return;
+
+        const cachedSnapshot = projectSnapshotCacheRef.current.get(path);
+        if (cachedSnapshot) {
+          clearProjectData();
+          setIndexProgress(null);
+          setProjectPath(path);
+          setIndexPathResult(cachedSnapshot.indexPathSummary);
+          setSearchIndexResult(cachedSnapshot.searchIndexSummary);
+          setWikiResult(cachedSnapshot.wikiSummary);
+
+          watcherUnlistenRef.current = await withTimeout(
+            initFileWatcher(path),
+            'File watcher startup',
+          );
+          if (!isCurrentRun()) return;
+
+          setProjectLoading(false, '100% · Ready (restored from local session cache)');
+          return;
+        }
+
+        clearProjectData();
+        setIndexProgress(null);
         setProjectPath(path);
         if (path !== selectedPath) {
-          setProjectLoading(true, `Detected project root: ${path}`);
+          setProjectLoading(true, `10% · Detected project root: ${path}`);
         }
-        await setWorkspaceRoot(path);
-        setProjectLoading(true, 'Scanning source files...');
-        const summary = await indexPath(path);
+        await withTimeout(setWorkspaceRoot(path), 'Workspace initialization');
+        if (!isCurrentRun()) return;
+        setProjectLoading(
+          true,
+          '20% · Scanning source files (large repos may take a few minutes)...',
+        );
+        const summary = await withTimeout(
+          indexPath(path, runId),
+          'Source indexing',
+          INDEXING_TIMEOUT_MS,
+        );
+        if (!isCurrentRun()) return;
         setIndexPathResult(summary);
+        setIndexProgress(null);
 
-        setProjectLoading(true, 'Rebuilding search index...');
-        await clearSearchIndex();
-        const searchSummary = await rebuildSearchIndex(path);
+        setProjectLoading(true, '55% · Rebuilding search index...');
+        await withTimeout(clearSearchIndex(), 'Search index reset');
+        if (!isCurrentRun()) return;
+        const searchSummary = await withTimeout(
+          rebuildSearchIndex(path),
+          'Search index rebuild',
+          SEARCH_REBUILD_TIMEOUT_MS,
+        );
+        if (!isCurrentRun()) return;
         setSearchIndexResult(searchSummary);
 
-        setProjectLoading(true, 'Starting file watcher...');
-        if (watcherUnlistenRef.current) {
-          watcherUnlistenRef.current();
-        }
-        watcherUnlistenRef.current = await initFileWatcher(path);
+        setProjectLoading(true, '75% · Starting file watcher...');
+        watcherUnlistenRef.current = await withTimeout(
+          initFileWatcher(path),
+          'File watcher startup',
+        );
+        if (!isCurrentRun()) return;
 
-        setProjectLoading(true, 'Generating wiki from indexed sources...');
-        const wikiSummary = await generate_wiki(path);
+        setProjectLoading(true, '88% · Generating wiki from indexed sources...');
+        const wikiSummary = await withTimeout(
+          generate_wiki(path),
+          'Wiki generation',
+          WIKI_TIMEOUT_MS,
+        );
+        if (!isCurrentRun()) return;
         setWikiResult(wikiSummary);
+        projectSnapshotCacheRef.current.set(path, {
+          indexPathSummary: summary,
+          searchIndexSummary: searchSummary,
+          wikiSummary,
+        });
         if (summary.errors.length > 0) {
           setIndexError(summary.errors.join('\n'));
         }
         setProjectLoading(
           false,
-          `Ready: ${summary.filesSeen} indexed · ${summary.filesSkipped} skipped · ${summary.errors.length} errors`,
+          `100% · Ready: ${summary.filesSeen} indexed · ${summary.filesSkipped} skipped · ${summary.errors.length} errors`,
         );
       } catch (error) {
+        if (!isCurrentRun()) return;
         const message = error instanceof Error ? error.message : String(error);
         setProjectLoading(false, 'Indexing failed');
         setIndexError(message);
@@ -154,6 +317,7 @@ export default function App() {
       clearProjectData,
       setIndexError,
       setIndexPathResult,
+      setIndexProgress,
       setProjectLoading,
       setProjectPath,
       setSearchError,
@@ -164,14 +328,25 @@ export default function App() {
   );
 
   const removeProject = useCallback(() => {
+    projectLoadRunRef.current += 1;
+    lastProgressUpdateRef.current = { at: 0, filesSeen: -1 };
     if (watcherUnlistenRef.current) {
       watcherUnlistenRef.current();
       watcherUnlistenRef.current = null;
     }
     setProjectPath(null);
     clearProjectData();
+    setIndexProgress(null);
     setProjectLoading(false, 'No project selected');
-  }, [clearProjectData, setProjectLoading, setProjectPath]);
+  }, [clearProjectData, setIndexProgress, setProjectLoading, setProjectPath]);
+
+  useEffect(() => {
+    const lastProjectPath = window.localStorage.getItem(LAST_PROJECT_PATH_KEY);
+    if (!lastProjectPath) {
+      return;
+    }
+    void loadProject(lastProjectPath);
+  }, [loadProject]);
 
   return (
     <div className="flex h-screen min-w-[1180px] flex-col overflow-hidden bg-app-background text-app-text">

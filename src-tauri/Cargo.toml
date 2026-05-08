@@ -35,6 +35,9 @@ tree-sitter-javascript = "0.23"
 tree-sitter-python = "0.23"
 tree-sitter-typescript = "0.23"
 walkdir = "2.5"
+tantivy = "0.22"
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+tract-onnx = "0.21"
 tauri-plugin-store = "2.4.3"
 reqwest = { version = "0.13.3", features = ["json"] }
 tauri-plugin-shell = "2.3.5"

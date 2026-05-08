@@ -14,6 +14,7 @@ import {
 import { useMemo, useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import logo from '../assets/logo.png';
+import { getLoadingProgress } from '../lib/progress';
 import {
   getLocalLlmStatus,
   getProviderSettings,
@@ -36,8 +37,7 @@ interface SidebarProps {
   onRemoveProject: () => void;
 }
 
-const WIKI_SOURCE_FILE_PATTERN =
-  /\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|rs|go|py|java|kt|kts|swift|rb|php|c|h|cpp|hpp|cs|sh|bash|zsh|fish|sql|json|jsonc|ya?ml|toml|ini|cfg|conf|xml|css|scss|less|vue|svelte|astro)$/i;
+const PROJECT_ROOT_NODE_ID = '__project_root__';
 
 export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
   const {
@@ -51,6 +51,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
     projectPath,
     isProjectLoading,
     projectStatus,
+    indexProgress,
     citations,
     setActivePanel,
     setActiveSourcePath,
@@ -62,8 +63,11 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
   const [explorerQuery, setExplorerQuery] = useState('');
   const [isStartingServer, setIsStartingServer] = useState(false);
   const [serverStatus, setServerStatus] = useState<string | null>(null);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set([PROJECT_ROOT_NODE_ID]),
+  );
   const indexedCount = searchIndexSummary?.documentsIndexed ?? indexPathSummary?.filesSeen ?? 0;
+  const loadingProgress = getLoadingProgress(indexProgress, projectStatus);
 
   useEffect(() => {
     void getProviderSettings().then(setProviderSettings).catch(console.error);
@@ -177,13 +181,15 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
     const query = explorerQuery.trim().toLowerCase();
     const filtered =
       query.length > 0 ? paths.filter((path) => path.toLowerCase().includes(query)) : paths;
-    return buildFileTree(filtered);
-  }, [indexPathSummary, explorerQuery]);
+    const projectName =
+      projectPath?.split(/[\\/]/).filter(Boolean).pop() || projectPath || 'project';
+    return buildFileTree(filtered, projectName);
+  }, [indexPathSummary, explorerQuery, projectPath]);
 
   const wikiItems = useMemo(() => {
     if (!indexPathSummary?.files) return [];
     return indexPathSummary.files
-      .filter((f) => WIKI_SOURCE_FILE_PATTERN.test(f.path))
+      .filter((f) => f.status !== 'deleted')
       .map((f) => ({
         path: f.path,
         label: `${f.path.split('/').join('_')}.md`,
@@ -209,24 +215,23 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
   }, [citations, projectPath]);
 
   useEffect(() => {
-    if (fileTree.length === 0) return;
+    if (!activeSourcePath) return;
     setExpandedGroups((existing) => {
       const next = new Set(existing);
-      for (const node of fileTree) {
-        if (node.kind === 'folder') {
-          next.add(node.path);
-        }
+      next.add(PROJECT_ROOT_NODE_ID);
+      for (const folderPath of folderAncestors(activeSourcePath)) {
+        next.add(folderPath);
       }
       return next;
     });
-  }, [fileTree]);
+  }, [activeSourcePath]);
 
   return (
     <aside className="flex h-full min-w-0 flex-col border-r border-app-border bg-app-panel overflow-hidden">
       {/* Top Header Section - Fixed */}
       <div className="shrink-0 border-b border-app-border p-4 z-20 bg-app-panel">
         <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-gradient-to-br from-blue-500/30 to-violet-500/30 p-1.5 ring-1 ring-app-border">
+          <div className="rounded-xl bg-app-panelSoft p-1.5 ring-1 ring-app-border">
             <img src={logo} alt="Local Brain Logo" className="h-6 w-6 rounded-md object-contain" />
           </div>
           <h1 className="text-[18px] font-black tracking-tight text-app-text uppercase">
@@ -262,11 +267,15 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
               <button
                 className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-app-border bg-app-background px-3 text-[12px] font-bold text-app-muted hover:text-app-text disabled:opacity-50"
                 type="button"
-                disabled={!projectPath || isProjectLoading}
+                disabled={!projectPath}
                 onClick={onRemoveProject}
               >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                Remove
+                {isProjectLoading ? (
+                  <Square className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                )}
+                {isProjectLoading ? 'Cancel' : 'Remove'}
               </button>
             </div>
           )}
@@ -434,7 +443,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                     }}
                   />
                 ))}
-                {fileTree.length === 0 && (
+                {!fileTree[0]?.children?.length && (
                   <div className="p-6 text-center text-app-muted font-medium">
                     {projectPath && isProjectLoading ? (
                       <div className="rounded-xl border border-app-border bg-app-background p-4">
@@ -448,11 +457,30 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                             Loading Project
                           </span>
                         </div>
-                        <div className="mb-2 h-2 overflow-hidden rounded-full bg-app-panelSoft">
-                          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-400 via-violet-400 to-emerald-400 flow-loader-track" />
+                        <div className="mb-2 flex items-center gap-2">
+                          <div
+                            className="h-2 flex-1 overflow-hidden rounded-full bg-app-panelSoft"
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(loadingProgress.percent)}
+                          >
+                            <div
+                              className="flow-progress-fill h-full rounded-full bg-app-accent"
+                              style={{ width: `${loadingProgress.percent}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] font-semibold text-app-text">
+                            {loadingProgress.percentLabel}
+                          </span>
                         </div>
                         <div className="text-[11px] text-app-muted">
-                          {projectStatus || 'Loading project and building wiki...'}
+                          {loadingProgress.detail}
+                          {loadingProgress.currentFile ? (
+                            <span className="block truncate font-mono text-[10px] text-app-text">
+                              {loadingProgress.currentFile}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-1 truncate font-mono text-[10px] text-app-muted/90">
                           {projectPath}
@@ -568,10 +596,10 @@ function sourceLabel(path: string, startLine: number | null, endLine: number | n
   return path;
 }
 
-function buildFileTree(paths: string[]): FileTreeNode[] {
+function buildFileTree(paths: string[], projectName: string): FileTreeNode[] {
   const root: FileTreeNode = {
-    name: '',
-    path: '',
+    name: projectName,
+    path: PROJECT_ROOT_NODE_ID,
     kind: 'folder',
     children: [],
   };
@@ -602,7 +630,7 @@ function buildFileTree(paths: string[]): FileTreeNode[] {
   }
 
   sortTreeChildren(root);
-  return root.children;
+  return [root];
 }
 
 function sortTreeChildren(node: FileTreeNode) {
@@ -698,11 +726,22 @@ function getFileColor(path: string) {
   return 'text-app-muted';
 }
 
+function folderAncestors(path: string): string[] {
+  const parts = path.split('/').filter(Boolean);
+  const folders: string[] = [];
+  let cursor = '';
+  for (let i = 0; i < Math.max(0, parts.length - 1); i += 1) {
+    cursor = cursor ? `${cursor}/${parts[i]}` : parts[i];
+    folders.push(cursor);
+  }
+  return folders;
+}
+
 function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-xl border border-app-border bg-app-background p-3 shadow-sm">
-      <div className="text-[10px] font-black tracking-widest text-app-muted uppercase">{label}</div>
-      <div className="mt-1 truncate text-[14px] font-bold text-app-text" title={value}>
+    <div className="rounded-xl border border-app-border bg-app-background p-3 text-center shadow-sm">
+      <div className="text-[10px] font-black uppercase tracking-widest text-app-muted">{label}</div>
+      <div className="mt-1 truncate font-mono text-[14px] font-bold text-app-text" title={value}>
         {value}
       </div>
       {color ? (

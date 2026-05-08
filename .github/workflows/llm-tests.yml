@@ -1,0 +1,27 @@
+name: LLM Tests (CI Only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  llm-tests:
+    name: Run src-tauri llm tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Run LLM tests
+        timeout-minutes: 10
+        working-directory: src-tauri
+        run: |
+          cargo test llm::tests::
