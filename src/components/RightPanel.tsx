@@ -77,7 +77,7 @@ export function RightPanel() {
     await askQuestion(query);
   }
 
-  async function askQuestion(value: string) {
+  async function askQuestion(value: string, sourcePath?: string) {
     const trimmed = value.trim();
     if (!trimmed || isAsking || !projectPath) {
       return;
@@ -113,7 +113,8 @@ export function RightPanel() {
         await new Promise((resolve) => setTimeout(resolve, 600));
       }
 
-      const answer = await askLocal(trimmed, activeSourcePath);
+      const resolvedSourcePath = sourcePath === undefined ? activeSourcePath : sourcePath;
+      const answer = await askLocal(trimmed, resolvedSourcePath);
       setCitations(answer.citations);
       setGraphContext(answer.graphContext);
       replaceChatMessage(pendingId, {
@@ -152,6 +153,7 @@ export function RightPanel() {
 
     await askQuestion(
       `Explain ${citation.path} (${lineScope}) in detail: intent, data flow, key logic, risks, and what to change safely.`,
+      citation.path,
     );
   }
 
@@ -565,17 +567,64 @@ function createChatMessage(role: ChatMessage['role'], content: string): ChatMess
 function sanitizeHtml(value: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(value, 'text/html');
+  const allowedTags = new Set([
+    'p',
+    'strong',
+    'em',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'ul',
+    'ol',
+    'li',
+    'blockquote',
+    'code',
+    'pre',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'th',
+    'td',
+    'hr',
+    'br',
+    'div',
+    'span',
+  ]);
 
   doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
     node.remove();
   });
 
+  doc.querySelectorAll('a, img').forEach((node) => {
+    const replacement = doc.createElement('span');
+    replacement.textContent = node.textContent ?? '';
+    node.replaceWith(replacement);
+  });
+
   doc.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    if (!allowedTags.has(tag)) {
+      const parent = element.parentNode;
+      while (element.firstChild) {
+        parent?.insertBefore(element.firstChild, element);
+      }
+      parent?.removeChild(element);
+      return;
+    }
     const attrs = Array.from(element.attributes);
     for (const attr of attrs) {
       const name = attr.name.toLowerCase();
       const val = attr.value.trim().toLowerCase();
-      if (name.startsWith('on') || val.startsWith('javascript:')) {
+      if (
+        name.startsWith('on') ||
+        name === 'href' ||
+        name === 'src' ||
+        val.startsWith('javascript:')
+      ) {
         element.removeAttribute(attr.name);
       }
     }

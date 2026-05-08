@@ -252,6 +252,35 @@ export function GraphView({ data, onSelectNode }: GraphViewProps) {
       .on('keydown', (event, d) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
+          event.stopPropagation();
+          if (mode === 'structure') {
+            d.fx = d.x ?? null;
+            d.fy = d.y ?? null;
+          }
+
+          if (mode === 'structure') {
+            if (d.isFolder) {
+              const folderPath = d.path ?? ROOT_FOLDER;
+              setExpandedFolders((current) => {
+                const next = new Set(current);
+                if (next.has(folderPath)) {
+                  next.delete(folderPath);
+                } else {
+                  next.add(folderPath);
+                }
+                next.add(ROOT_FOLDER);
+                return next;
+              });
+              return;
+            }
+
+            if (d.isFile && d.path) {
+              setActiveSourcePath(d.path);
+              setMode('code');
+              onSelectNode({ id: d.path, label: d.path, kind: 'file' });
+              return;
+            }
+          }
           onSelectNode({ id: d.rawId ?? d.id, label: d.label, kind: d.kind });
         }
       });

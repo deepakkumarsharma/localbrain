@@ -148,7 +148,7 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
                       onClick={onGenerateWiki}
                       disabled={isGeneratingWiki}
                     >
-                      {isGeneratingWiki ? 'Generating Wiki...' : 'Generate Wiki For This File'}
+                      {isGeneratingWiki ? 'Generating Wiki...' : 'Generate Wiki For Workspace'}
                     </button>
                     <button
                       className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors"

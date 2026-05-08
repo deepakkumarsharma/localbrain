@@ -125,19 +125,27 @@ fn try_embed_with_onnx(text: &str, model_path: &str) -> Result<Vec<f32>, String>
         attention_mask[index] = i64::from(encoding.get_attention_mask()[index]);
     }
 
+    let input_ids_tensor = Tensor::from_shape(&[1, token_count], &input_ids)
+        .map_err(|error| format!("input_ids tensor error: {error}"))?;
+    let attention_mask_tensor = Tensor::from_shape(&[1, token_count], &attention_mask)
+        .map_err(|error| format!("attention_mask tensor error: {error}"))?;
+    let token_type_ids_tensor = Tensor::from_shape(&[1, token_count], &token_type_ids)
+        .map_err(|error| format!("token_type_ids tensor error: {error}"))?;
+
     let outputs = cached
         .model
         .run(tvec!(
-            Tensor::from_shape(&[1, token_count], &input_ids)
-                .map_err(|error| format!("input_ids tensor error: {error}"))?
-                .into(),
-            Tensor::from_shape(&[1, token_count], &attention_mask)
-                .map_err(|error| format!("attention_mask tensor error: {error}"))?
-                .into(),
-            Tensor::from_shape(&[1, token_count], &token_type_ids)
-                .map_err(|error| format!("token_type_ids tensor error: {error}"))?
-                .into(),
+            input_ids_tensor.clone().into(),
+            attention_mask_tensor.clone().into(),
+            token_type_ids_tensor.into(),
         ))
+        .or_else(|_| {
+            cached.model.run(tvec!(
+                input_ids_tensor.clone().into(),
+                attention_mask_tensor.clone().into(),
+            ))
+        })
+        .or_else(|_| cached.model.run(tvec!(input_ids_tensor.into())))
         .map_err(|error| format!("ONNX inference failed: {error}"))?;
 
     let output_tensor = outputs

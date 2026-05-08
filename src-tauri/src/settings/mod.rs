@@ -89,12 +89,17 @@ impl SettingsStore {
         app: &AppHandle,
         embedding_model_path: Option<String>,
     ) -> Result<ProviderSettings, String> {
-        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
-        settings.embedding_model_path = embedding_model_path;
-        let updated = settings.clone();
-        drop(settings);
-        embeddings::set_embedding_model_path(updated.embedding_model_path.clone());
+        let updated = {
+            let settings = self.settings.lock().map_err(|error| error.to_string())?;
+            let mut updated = settings.clone();
+            updated.embedding_model_path = embedding_model_path;
+            updated
+        };
         persistence::save_settings(app, &updated)?;
+        embeddings::set_embedding_model_path(updated.embedding_model_path.clone());
+        if let Ok(mut settings) = self.settings.lock() {
+            *settings = updated.clone();
+        }
 
         Ok(updated)
     }

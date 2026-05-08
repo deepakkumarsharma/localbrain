@@ -287,22 +287,15 @@ pub async fn hybrid_search(
         let haystack = format!("{title}\n{content}").to_lowercase();
         let text_score = score_text(&haystack, &query_terms);
         let vector_score = match (vector_json, vector_blob) {
-            (Some(vector_json), _) => {
-                let vector: Vec<f32> = serde_json::from_str(&vector_json)
-                    .map_err(|_| SearchError::InvalidVector { path: path.clone() })?;
-                if vector.len() != query_vector.len() {
-                    return Err(SearchError::InvalidVector { path: path.clone() });
-                }
-                cosine_similarity(&query_vector, &vector).max(0.0)
-            }
-            (None, Some(vector_blob)) => {
-                let vector = vector_from_blob(&vector_blob)
-                    .ok_or_else(|| SearchError::InvalidVector { path: path.clone() })?;
-                if vector.len() != query_vector.len() {
-                    return Err(SearchError::InvalidVector { path: path.clone() });
-                }
-                cosine_similarity(&query_vector, &vector).max(0.0)
-            }
+            (Some(vector_json), _) => serde_json::from_str::<Vec<f32>>(&vector_json)
+                .ok()
+                .filter(|vector| vector.len() == query_vector.len())
+                .map(|vector| cosine_similarity(&query_vector, &vector).max(0.0))
+                .unwrap_or(0.0),
+            (None, Some(vector_blob)) => vector_from_blob(&vector_blob)
+                .filter(|vector| vector.len() == query_vector.len())
+                .map(|vector| cosine_similarity(&query_vector, &vector).max(0.0))
+                .unwrap_or(0.0),
             (None, None) => 0.0,
         };
         let score = (text_score * 0.65) + (vector_score * 0.35);

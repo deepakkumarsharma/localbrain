@@ -443,7 +443,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                     }}
                   />
                 ))}
-                {fileTree.length === 0 && (
+                {!fileTree[0]?.children?.length && (
                   <div className="p-6 text-center text-app-muted font-medium">
                     {projectPath && isProjectLoading ? (
                       <div className="rounded-xl border border-app-border bg-app-background p-4">

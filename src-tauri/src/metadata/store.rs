@@ -385,7 +385,11 @@ impl MetadataStore {
 
             let mut paths = Vec::new();
             for row in rows {
-                paths.push(row.try_get("path")?);
+                let path: String = row.try_get("path")?;
+                let resolved = self.resolve_path(&path);
+                if resolved.is_ok() {
+                    paths.push(path);
+                }
             }
             return Ok(paths);
         }

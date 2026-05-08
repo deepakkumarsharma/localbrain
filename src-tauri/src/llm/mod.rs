@@ -86,9 +86,11 @@ pub async fn ask_local(
         focused_result = document_for_path(metadata_store, path, query).await?;
         if let Some(ref focused) = focused_result {
             results.retain(|result| result.path != focused.path);
-            if query_targets_path(query, path) || intent != QueryIntent::ProjectOverview {
+            if intent != QueryIntent::ProjectOverview
+                && (query_targets_path(query, path) || results.is_empty())
+            {
                 results.insert(0, focused.clone());
-            } else {
+            } else if intent != QueryIntent::ProjectOverview {
                 results.push(focused.clone());
             }
         }
@@ -287,10 +289,16 @@ fn build_prompt(
 
     context_text.push_str("### Code Context\n");
     for (i, citation) in citations.iter().enumerate() {
+        let line_span = match (citation.start_line, citation.end_line) {
+            (Some(start), Some(end)) if start == end => format!("{start}-{end}"),
+            (Some(start), Some(end)) => format!("{start}-{end}"),
+            _ => "unknown-lines".to_string(),
+        };
         context_text.push_str(&format!(
-            "File {}: {}\nContent:\n{}\n\n",
+            "File {} {}:{}\nContent:\n{}\n\n",
             i + 1,
             citation.path,
+            line_span,
             citation.snippet
         ));
     }
@@ -463,13 +471,14 @@ fn format_answer(
         lines.push("No executable logic found. This file likely contains constants, types, or documentation.".to_string());
     } else {
         lines.push("## 🔄 Data Lifecycle".to_string());
-        lines.push("Understanding how data moves through this file:".to_string());
-        lines.push(format!(
-            "1. **Entry**: Data enters via `{}`\n2. **Logic**: It is processed by `{}`\n3. **Exit**: Result is passed to `{}`",
-            infer_entry_point(citations),
-            infer_core_logic(citations),
-            infer_exit_point(citations)
-        ));
+        lines.push("Evidence-backed flow from indexed snippets:".to_string());
+        for citation in citations.iter().take(3) {
+            lines.push(format!(
+                "- `{}`: {}",
+                citation_label(citation),
+                truncate_snippet(&citation.snippet)
+            ));
+        }
 
         lines.push(String::new());
         lines.push("## 🧱 Structural Blueprint".to_string());
@@ -491,7 +500,8 @@ fn format_answer(
                 "**Intent:** {}",
                 infer_intent_explanation(citation)
             ));
-            lines.push(format!("```rust\n{}\n```", citation.snippet));
+            lines.push(format!("**Evidence:** `{}`", citation_label(citation)));
+            lines.push(citation.snippet.clone());
             lines.push(format!(
                 "> **Translation:** {}",
                 infer_plain_english_logic(citation)
@@ -500,11 +510,12 @@ fn format_answer(
         }
 
         lines.push("## 🛠 Developer Cheat Sheet".to_string());
-        lines.push("| If you want to... | Look for... |".to_string());
-        lines.push("| :--- | :--- |".to_string());
-        lines.push("| Change how data is saved | The `save_to_x` function |".to_string());
-        lines.push("| Fix a validation error | The `Validator` implementation |".to_string());
-        lines.push("| Update the API response | The `IntoResponse` trait |".to_string());
+        for citation in citations.iter().take(4) {
+            lines.push(format!(
+                "- Start with `{}` for safe edits in this area.",
+                citation_label(citation)
+            ));
+        }
     }
     lines.join("\n")
 }
@@ -514,29 +525,6 @@ struct DeepCitationMeta {
     kind: String,
     responsibility: String,
     interaction: String,
-}
-
-fn infer_entry_point(citations: &[Citation]) -> String {
-    citations
-        .first()
-        .map(|c| c.title.clone())
-        .unwrap_or_else(|| "entry function".to_string())
-}
-
-fn infer_core_logic(citations: &[Citation]) -> String {
-    citations
-        .get(1)
-        .or_else(|| citations.first())
-        .map(|c| c.title.clone())
-        .unwrap_or_else(|| "core processing logic".to_string())
-}
-
-fn infer_exit_point(citations: &[Citation]) -> String {
-    citations
-        .get(2)
-        .or_else(|| citations.last())
-        .map(|c| c.title.clone())
-        .unwrap_or_else(|| "outbound return path".to_string())
 }
 
 fn analyze_deep(citation: &Citation) -> DeepCitationMeta {

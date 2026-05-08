@@ -488,7 +488,6 @@ fn is_ignored_path(path: &Path) -> bool {
                 | ".ssh"
                 | ".aws"
                 | "__snapshots__"
-                | "snapshots"
         ) || (value.starts_with('.') && !matches!(value.as_ref(), ".github" | ".vscode"))
     }) || path.file_name().is_some_and(|file_name| {
         let value = file_name.to_string_lossy();
@@ -732,6 +731,7 @@ mod tests {
         assert!(is_ignored_path(Path::new(
             "src/components/__snapshots__/App.test.tsx.snap"
         )));
+        assert!(!is_ignored_path(Path::new("src/snapshots/example.ts")));
         assert!(!is_ignored_path(Path::new("src/App.tsx")));
     }
 }
