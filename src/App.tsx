@@ -69,8 +69,9 @@ function indexingStatus(progress: IndexProgressEvent) {
 export default function App() {
   const {
     setAppVersion,
-    theme,
+    themePreference,
     toggleTheme,
+    setTheme,
     projectPath,
     setIndexPathResult,
     setIndexProgress,
@@ -153,8 +154,17 @@ export default function App() {
   }, [setIndexProgress, setProjectLoading]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const nextTheme =
+        themePreference === 'system' ? (media.matches ? 'dark' : 'light') : themePreference;
+      setTheme(nextTheme);
+      document.documentElement.dataset.theme = nextTheme;
+    };
+    applyTheme();
+    media.addEventListener('change', applyTheme);
+    return () => media.removeEventListener('change', applyTheme);
+  }, [setTheme, themePreference]);
 
   useEffect(() => {
     if (!hasHydratedProjectPathRef.current) {

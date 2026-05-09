@@ -3,69 +3,26 @@
 @tailwind utilities;
 
 :root {
-  /* Dark Mode Palette (context/ui-context.md) */
-  --color-app-background: 16 19 26; /* #10131a */
-  --color-app-panel: 23 27 36; /* #171b24 */
-  --color-app-panel-soft: 32 38 54; /* #202636 */
-  --color-app-border: 47 56 72; /* #2f3848 */
-  --color-app-text: 232 237 245; /* #e8edf5 */
-  --color-app-muted: 154 167 184; /* #9aa7b8 */
-  --color-app-accent: 155 183 255; /* #9bb7ff */
-  --color-app-accent-soft: 38 54 87; /* #263657 */
-  --color-app-success: 125 223 179; /* #7ddfb3 */
-  --color-app-warning: 255 209 102; /* #ffd166 */
-  --color-app-error: 255 154 162; /* #ff9aa2 */
-
-  /* Graph colors are derived from the same app palette only */
-  --color-graph-feature: 155 183 255;
-  --color-graph-component: 38 54 87;
-  --color-graph-api: 125 223 179;
-  --color-graph-service: 255 209 102;
-  --color-graph-model: 255 154 162;
-  --color-graph-hook: 154 167 184;
-  --color-graph-external: 232 237 245;
-  --color-graph-node-fill: 23 27 36;
-  --color-graph-node-active: 38 54 87;
-  --color-graph-edge: 154 167 184;
-
-  font-family:
-    'Inter',
-    system-ui,
-    -apple-system,
-    sans-serif;
-  font-size: 16px; /* Increased base size */
-  line-height: 1.6;
-  font-weight: 450; /* Slightly bolder base weight */
-  color-scheme: dark;
-  background: #10131a;
-  color: #e8edf5;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-:root[data-theme='light'] {
-  /* Light Mode Palette (context/ui-context.md) */
-  --color-app-background: 248 250 252; /* #f8fafc */
-  --color-app-panel: 255 255 255; /* #ffffff */
-  --color-app-panel-soft: 241 245 249; /* #f1f5f9 */
-  --color-app-border: 219 228 238; /* #dbe4ee */
-  --color-app-text: 30 41 59; /* #1e293b */
-  --color-app-muted: 100 116 139; /* #64748b */
-  --color-app-accent: 124 156 255; /* #7c9cff */
-  --color-app-accent-soft: 231 237 255; /* #e7edff */
-  --color-app-success: 107 207 159; /* #6bcf9f */
-  --color-app-warning: 246 199 107; /* #f6c76b */
-  --color-app-error: 242 139 130; /* #f28b82 */
+  /* Light Mode Palette - Pastel */
+  --color-app-background: 248 250 252;
+  --color-app-panel: 255 255 255;
+  --color-app-panel-soft: 241 245 249;
+  --color-app-border: 219 228 238;
+  --color-app-text: 30 41 59;
+  --color-app-muted: 100 116 139;
+  --color-app-accent: 124 156 255;
+  --color-app-accent-soft: 231 237 255;
+  --color-app-success: 107 207 159;
+  --color-app-warning: 246 199 107;
+  --color-app-error: 242 139 130;
 
   --color-graph-feature: 124 156 255;
-  --color-graph-component: 231 237 255;
-  --color-graph-api: 107 207 159;
-  --color-graph-service: 246 199 107;
-  --color-graph-model: 242 139 130;
-  --color-graph-hook: 100 116 139;
-  --color-graph-external: 30 41 59;
+  --color-graph-component: 139 92 246;
+  --color-graph-api: 16 185 129;
+  --color-graph-service: 217 119 6;
+  --color-graph-model: 239 68 68;
+  --color-graph-hook: 14 165 233;
+  --color-graph-external: 219 39 119;
   --color-graph-node-fill: 255 255 255;
   --color-graph-node-active: 231 237 255;
   --color-graph-edge: 100 116 139;
@@ -75,9 +32,46 @@
     system-ui,
     -apple-system,
     sans-serif;
-  color-scheme: light;
+  font-size: 16px; /* Increased base size */
+  line-height: 1.6;
+  font-weight: 450; /* Slightly bolder base weight */
+  color-scheme: light dark;
   background: #f8fafc;
   color: #1e293b;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='dark'] {
+  /* Dark Mode Palette - Pastel */
+  --color-app-background: 16 19 26;
+  --color-app-panel: 23 27 36;
+  --color-app-panel-soft: 32 38 54;
+  --color-app-border: 47 56 72;
+  --color-app-text: 232 237 245;
+  --color-app-muted: 154 167 184;
+  --color-app-accent: 155 183 255;
+  --color-app-accent-soft: 38 54 87;
+  --color-app-success: 125 223 179;
+  --color-app-warning: 255 209 102;
+  --color-app-error: 255 154 162;
+
+  --color-graph-feature: 155 183 255;
+  --color-graph-component: 196 181 253;
+  --color-graph-api: 125 223 179;
+  --color-graph-service: 255 209 102;
+  --color-graph-model: 255 154 162;
+  --color-graph-hook: 125 211 252;
+  --color-graph-external: 244 114 182;
+  --color-graph-node-fill: 23 27 36;
+  --color-graph-node-active: 38 54 87;
+  --color-graph-edge: 148 163 184;
+
+  color-scheme: dark;
+  background: #10131a;
+  color: #e8edf5;
 }
 
 html,

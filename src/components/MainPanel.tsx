@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Download, FileText, GitBranch, Loader2, Search, Workflow, X } from 'lucide-react';
 import { FlowView } from './FlowView';
 import { GraphView } from './GraphView';
+import { RunbookView } from './RunbookView';
 import { WikiView } from './WikiView';
 import { DatabaseView } from './DatabaseView';
 import type { GraphViewData } from '../lib/graph';
@@ -14,6 +15,7 @@ const views = [
   { id: 'wiki', label: 'Wiki View' },
   { id: 'flow', label: 'Flow View' },
   { id: 'database', label: 'Database View' },
+  { id: 'runbook', label: 'Runbook' },
 ] as const;
 
 export function MainPanel() {
@@ -134,6 +136,12 @@ export function MainPanel() {
       run: () => setActivePanel('database'),
     },
     {
+      label: 'Open Runbook',
+      detail: 'Guided project commands, process controls, and logs',
+      icon: Workflow,
+      run: () => setActivePanel('runbook'),
+    },
+    {
       label: 'Export Wiki',
       detail: 'Export wiki markdown for the selected source file',
       icon: Download,
@@ -218,6 +226,8 @@ export function MainPanel() {
           <WikiView onGenerateWiki={handleGenerateWiki} isGeneratingWiki={isGeneratingWiki} />
         ) : null}
         {activePanel === 'flow' ? <FlowView /> : null}
+        {activePanel === 'database' ? <DatabaseView schema={databaseSchema} /> : null}
+        {activePanel === 'runbook' ? <RunbookView /> : null}
         {activePanel === 'database' ? <DatabaseView schema={databaseSchema} /> : null}
       </section>
 

@@ -1,4 +1,4 @@
-import { BookText, FileCode2, ShieldCheck, Sparkles } from 'lucide-react';
+import { BookText, ShieldCheck, CheckCircle2, AlertCircle, FileText, Clock } from 'lucide-react';
 import { marked } from 'marked';
 import { useEffect, useState } from 'react';
 import { getWikiContent } from '../lib/wiki';
@@ -68,252 +68,258 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
   };
 
   const sourceFile = activeSourcePath || 'No file selected';
-  const isReady = Boolean(content);
   const wikiStats = deriveWikiStats(content);
   const insights = deriveDeveloperInsights(content);
 
   return (
-    <div className="absolute inset-0 bg-app-background">
-      <div className="app-scrollbar h-full overflow-auto">
-        <div className="mx-auto w-full max-w-[1040px] px-8 py-8">
-          <div className="mb-6 rounded-2xl border border-app-border bg-app-panel/90 p-5 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.35)]">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-app-muted">
-                  <BookText className="h-4 w-4" aria-hidden="true" />
-                  <span className="text-[11px] font-black uppercase tracking-widest">
-                    Wiki View
-                  </span>
-                </div>
-                <h1 className="mt-2 truncate text-[24px] font-black tracking-tight text-app-text">
-                  {wikiFileName(activeSourcePath)}
-                </h1>
-                <p className="mt-1 truncate text-[13px] text-app-muted" title={sourceFile}>
-                  Source file: <span className="font-mono text-app-text">{sourceFile}</span>
-                </p>
-              </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-app-success/40 bg-app-success/15 px-3 py-1.5 text-[11px] font-bold text-app-success">
-                <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                Source-backed
-              </span>
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <MetaPill
-                icon={<FileCode2 className="h-3.5 w-3.5" aria-hidden="true" />}
-                label="Wiki Path"
-                value={`docs/wiki/${wikiFileName(activeSourcePath)}`}
-                mono
-              />
-              <MetaPill
-                icon={<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
-                label="Pages Generated"
-                value={wikiSummary ? String(wikiSummary.pagesWritten) : 'N/A'}
-              />
-              <MetaPill
-                icon={<BookText className="h-3.5 w-3.5" aria-hidden="true" />}
-                label="Status"
-                value={isReady ? 'Loaded' : 'Not generated'}
-              />
-            </div>
-          </div>
+    <div className="absolute inset-0 bg-app-background flex flex-col">
+      <div className="app-scrollbar h-full overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-[1280px] flex-col lg:flex-row items-start gap-12 px-6 py-10 md:px-12">
+          {content ? (
+            <>
+              {/* Main Document Area */}
+              <main className="flex-1 min-w-0 max-w-[840px]">
+                <header className="mb-10 border-b border-app-border pb-8">
+                  <div className="flex items-center gap-3 text-[13px] text-app-muted mb-4 font-mono">
+                    <BookText className="h-4 w-4 text-app-text" aria-hidden="true" />
+                    {sourceFile}
+                  </div>
+                  <h1 className="text-[40px] font-bold tracking-tight text-app-text mb-6">
+                    {wikiFileName(activeSourcePath).replace('.md', '')}
+                  </h1>
+                  <div className="flex flex-wrap items-center gap-4 text-[13px] text-app-muted font-medium">
+                    <span className="inline-flex items-center gap-1.5 text-app-success bg-app-success/10 px-2 py-1 rounded">
+                      <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                      Source-backed
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="h-4 w-4" /> {wikiStats.readMinutes} min read
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="h-4 w-4" /> {wikiStats.words} words
+                    </span>
+                  </div>
+                </header>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="rounded-2xl border border-app-border bg-app-panel p-0 shadow-[0_20px_35px_-26px_rgba(0,0,0,0.45)] overflow-hidden">
-              {content ? (
-                <>
-                  <div className="border-b border-app-border bg-app-panelSoft px-7 py-3 text-[11px] font-black uppercase tracking-widest text-app-muted">
-                    Developer Overview
-                  </div>
-                  <article
-                    className="wiki-markdown p-7 sm:p-10"
-                    dangerouslySetInnerHTML={{ __html: html }}
-                    onClick={handleWikiClick}
-                  />
-                </>
-              ) : (
-                <div className="flex min-h-[380px] flex-col items-center justify-center px-6 py-14 text-center">
-                  <div className="mb-4 rounded-full border border-app-border bg-app-background p-3">
-                    <BookText className="h-6 w-6 text-app-muted" aria-hidden="true" />
-                  </div>
-                  <h2 className="text-[20px] font-black tracking-tight text-app-text">
-                    No wiki page available yet
-                  </h2>
-                  <p className="mt-2 max-w-[560px] text-[14px] leading-7 text-app-muted">
-                    Generate wiki from the top action bar to create source-backed documentation for
-                    this file.
-                  </p>
-                  <div className="mt-6 flex items-center gap-3">
-                    <button
-                      className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors disabled:opacity-60"
-                      onClick={onGenerateWiki}
-                      disabled={isGeneratingWiki}
-                    >
-                      {isGeneratingWiki ? 'Generating Wiki...' : 'Generate Wiki For Workspace'}
-                    </button>
-                    <button
-                      className="rounded-xl border border-app-border bg-app-background px-4 py-2.5 text-[13px] font-bold text-app-text hover:border-app-accent/40 hover:text-app-accent transition-colors"
-                      onClick={() => setActivePanel('graph')}
-                    >
-                      Switch to Graph View
-                    </button>
-                  </div>
+                <article
+                  className="wiki-markdown"
+                  dangerouslySetInnerHTML={{ __html: html }}
+                  onClick={handleWikiClick}
+                />
+              </main>
+
+              {/* Developer Sidebar */}
+              <aside className="sticky top-10 hidden w-[280px] shrink-0 lg:flex flex-col gap-10">
+                
+                {/* Outline */}
+                <div>
+                  <h3 className="text-[13px] font-bold text-app-text mb-3 uppercase tracking-wider">
+                    On this page
+                  </h3>
+                  <nav className="flex flex-col gap-1.5 border-l border-app-border">
+                    {outline.length > 0 ? (
+                      outline.map((item) => (
+                        <a
+                          key={item.id}
+                          href={`#${item.id}`}
+                          className="block text-[13.5px] text-app-muted hover:text-app-text transition-colors -ml-[1px] border-l-2 border-transparent hover:border-app-text py-0.5"
+                          style={{ paddingLeft: `${Math.max(16, item.level * 12)}px` }}
+                        >
+                          {item.title}
+                        </a>
+                      ))
+                    ) : (
+                      <div className="text-[13px] text-app-muted pl-4">No sections found.</div>
+                    )}
+                  </nav>
                 </div>
-              )}
-            </div>
-            {content ? (
-              <aside className="rounded-2xl border border-app-border bg-app-panel p-4 h-fit">
-                <h3 className="text-[11px] font-black uppercase tracking-widest text-app-muted">
-                  Document Intelligence
-                </h3>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                  <MiniStat label="Sections" value={String(wikiStats.sections)} />
-                  <MiniStat label="Code" value={String(wikiStats.codeBlocks)} />
-                  <MiniStat label="Links" value={String(wikiStats.links)} />
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-center">
-                  <MiniStat label="Words" value={String(wikiStats.words)} />
-                  <MiniStat label="Read (min)" value={String(wikiStats.readMinutes)} />
-                </div>
-                <h4 className="mt-4 text-[11px] font-black uppercase tracking-widest text-app-muted">
-                  Developer Signals
-                </h4>
-                <div className="mt-2 space-y-1.5">
-                  {insights.map((insight) => (
-                    <div
-                      key={insight.label}
-                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
-                        insight.ok
-                          ? 'border-app-success/40 bg-app-success/15 text-app-success'
-                          : 'border-app-warning/40 bg-app-warning/15 text-app-warning'
-                      }`}
-                    >
-                      {insight.label}
-                    </div>
-                  ))}
-                </div>
-                <h4 className="mt-4 text-[11px] font-black uppercase tracking-widest text-app-muted">
-                  Outline
-                </h4>
-                <div className="mt-2 max-h-[360px] overflow-auto app-scrollbar pr-1 space-y-1">
-                  {outline.length > 0 ? (
-                    outline.map((item) => (
-                      <a
-                        key={item.id}
-                        href={`#${item.id}`}
-                        className="block rounded-md px-2 py-1 text-[12px] text-app-muted hover:bg-app-background hover:text-app-text"
-                        style={{ paddingLeft: `${Math.max(8, item.level * 10)}px` }}
-                      >
-                        {item.title}
-                      </a>
-                    ))
-                  ) : (
-                    <div className="text-[12px] text-app-muted">No sections detected.</div>
-                  )}
+
+                {/* Developer Signals */}
+                <div>
+                  <h3 className="text-[13px] font-bold text-app-text mb-3 uppercase tracking-wider">
+                    Developer Signals
+                  </h3>
+                  <ul className="flex flex-col gap-2.5">
+                    {insights.map((insight) => (
+                      <li key={insight.label} className="flex items-start gap-2.5">
+                        {insight.ok ? (
+                          <CheckCircle2 className="h-4 w-4 text-app-success shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-app-warning shrink-0 mt-0.5" />
+                        )}
+                        <span className={`text-[13.5px] leading-snug ${insight.ok ? 'text-app-text' : 'text-app-muted'}`}>
+                          {insight.label}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </aside>
-            ) : null}
-          </div>
+            </>
+          ) : (
+            <div className="flex w-full min-h-[60vh] flex-col items-center justify-center text-center">
+              <div className="mb-6 rounded-xl border border-app-border bg-app-panel p-5 text-app-muted shadow-sm">
+                <FileText className="h-10 w-10" aria-hidden="true" />
+              </div>
+              <h2 className="text-[22px] font-bold tracking-tight text-app-text mb-2">
+                No developer documentation
+              </h2>
+              <p className="max-w-[480px] text-[15px] text-app-muted mb-8 leading-relaxed">
+                Wiki content is generated directly from parser symbols and structural data. Generate it to explore <code className="text-app-text font-mono bg-app-panel px-1.5 py-0.5 rounded border border-app-border text-[13px]">{sourceFile}</code>.
+              </p>
+              <div className="flex gap-4">
+                <button
+                  className="rounded-md bg-app-text px-4 py-2 text-[14px] font-bold text-app-background hover:opacity-90 disabled:opacity-50 transition-opacity"
+                  onClick={onGenerateWiki}
+                  disabled={isGeneratingWiki}
+                >
+                  {isGeneratingWiki ? 'Generating...' : 'Generate Wiki'}
+                </button>
+                <button
+                  className="rounded-md border border-app-border bg-app-panel px-4 py-2 text-[14px] font-bold text-app-text hover:bg-app-panelSoft transition-colors"
+                  onClick={() => setActivePanel('graph')}
+                >
+                  Return to Graph
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
       <style>{`
+        /* Professional Developer Docs Markdown Styling (GitHub / Stripe inspired) */
         .wiki-markdown {
           color: rgb(var(--color-app-text));
           font-size: 15px;
-          line-height: 1.8;
+          line-height: 1.6;
+          word-wrap: break-word;
+        }
+        .wiki-markdown > *:first-child {
+          margin-top: 0 !important;
         }
         .wiki-markdown h1,
         .wiki-markdown h2,
-        .wiki-markdown h3 {
+        .wiki-markdown h3,
+        .wiki-markdown h4 {
           color: rgb(var(--color-app-text));
-          font-weight: 800;
-          letter-spacing: -0.02em;
-          margin-top: 1.8rem;
-          margin-bottom: 0.8rem;
+          font-weight: 600;
+          margin-top: 24px;
+          margin-bottom: 16px;
           line-height: 1.25;
         }
-        .wiki-markdown h1 { font-size: 1.8rem; margin-top: 0.2rem; }
-        .wiki-markdown h2 { font-size: 1.35rem; }
-        .wiki-markdown h3 { font-size: 1.12rem; }
+        .wiki-markdown h1 {
+          font-size: 2em;
+          padding-bottom: 0.3em;
+          border-bottom: 1px solid rgb(var(--color-app-border));
+        }
+        .wiki-markdown h2 {
+          font-size: 1.5em;
+          padding-bottom: 0.3em;
+          border-bottom: 1px solid rgb(var(--color-app-border));
+        }
+        .wiki-markdown h3 {
+          font-size: 1.25em;
+        }
+        .wiki-markdown h4 {
+          font-size: 1em;
+        }
         .wiki-markdown p,
-        .wiki-markdown li {
-          color: color-mix(in srgb, rgb(var(--color-app-text)) 88%, rgb(var(--color-app-muted)) 12%);
-        }
+        .wiki-markdown blockquote,
         .wiki-markdown ul,
-        .wiki-markdown ol {
-          margin: 0.7rem 0 1rem 1.2rem;
-        }
-        .wiki-markdown li {
-          margin: 0.22rem 0;
-          padding-left: 0.2rem;
+        .wiki-markdown ol,
+        .wiki-markdown dl,
+        .wiki-markdown table,
+        .wiki-markdown pre {
+          margin-top: 0;
+          margin-bottom: 16px;
         }
         .wiki-markdown a {
           color: rgb(var(--color-app-accent));
-          text-underline-offset: 3px;
+          text-decoration: none;
         }
-        .wiki-markdown hr {
-          border: 0;
-          border-top: 1px solid rgb(var(--color-app-border));
-          margin: 1.4rem 0;
+        .wiki-markdown a:hover {
+          text-decoration: underline;
         }
-        .wiki-markdown blockquote {
-          margin: 1rem 0;
-          padding: 0.9rem 1rem;
-          border-left: 3px solid rgb(var(--color-app-accent));
-          background: rgba(var(--color-app-accent), 0.08);
-          border-radius: 0.6rem;
-          color: rgb(var(--color-app-text));
+        .wiki-markdown ul,
+        .wiki-markdown ol {
+          padding-left: 2em;
+        }
+        .wiki-markdown li {
+          margin-top: 0.25em;
+        }
+        .wiki-markdown li > p {
+          margin-top: 16px;
         }
         .wiki-markdown code {
-          padding: 0.12rem 0.45rem;
-          border-radius: 0.4rem;
-          border: 1px solid rgb(var(--color-app-border));
-          background: rgb(var(--color-app-panel-soft));
-          font-size: 12px;
-          color: rgb(var(--color-app-text));
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          padding: 0.2em 0.4em;
+          margin: 0;
+          font-size: 85%;
+          background-color: rgba(var(--color-app-text), 0.08);
+          border-radius: 6px;
+          font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
         }
         .wiki-markdown pre {
-          margin: 1rem 0;
-          padding: 0.9rem 1rem;
-          border-radius: 0.8rem;
-          border: 1px solid rgb(var(--color-app-border));
-          background: rgb(var(--color-app-background));
+          padding: 16px;
           overflow: auto;
+          font-size: 85%;
+          line-height: 1.45;
+          background-color: rgb(var(--color-app-panel));
+          border: 1px solid rgb(var(--color-app-border));
+          border-radius: 6px;
         }
         .wiki-markdown pre code {
-          display: block;
           padding: 0;
-          border: none;
+          margin: 0;
+          font-size: 100%;
+          word-break: normal;
+          white-space: pre;
           background: transparent;
-          line-height: 1.65;
+          border: 0;
+        }
+        .wiki-markdown blockquote {
+          padding: 0 1em;
+          color: rgb(var(--color-app-muted));
+          border-left: 0.25em solid rgb(var(--color-app-border));
+        }
+        .wiki-markdown hr {
+          height: 0.25em;
+          padding: 0;
+          margin: 24px 0;
+          background-color: rgb(var(--color-app-border));
+          border: 0;
         }
         .wiki-markdown table {
+          display: block;
           width: 100%;
+          width: max-content;
+          max-width: 100%;
+          overflow: auto;
           border-collapse: collapse;
-          margin: 1rem 0;
-          font-size: 13px;
-          overflow: hidden;
-          border-radius: 0.6rem;
         }
-        .wiki-markdown th,
-        .wiki-markdown td {
+        .wiki-markdown table th {
+          font-weight: 600;
+        }
+        .wiki-markdown table th,
+        .wiki-markdown table td {
+          padding: 6px 13px;
           border: 1px solid rgb(var(--color-app-border));
-          padding: 0.55rem 0.65rem;
-          text-align: left;
         }
-        .wiki-markdown th {
-          background: rgb(var(--color-app-panel-soft));
-          color: rgb(var(--color-app-text));
-          font-weight: 700;
+        .wiki-markdown table tr {
+          background-color: transparent;
+          border-top: 1px solid rgb(var(--color-app-border));
         }
         .wikilink {
-          color: rgb(var(--color-graph-component));
-          border-bottom: 1px dotted rgba(var(--color-graph-component), 0.4);
+          color: rgb(var(--color-app-accent));
+          font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+          background-color: rgba(var(--color-app-accent), 0.1);
+          padding: 0.1em 0.3em;
+          border-radius: 4px;
+          font-size: 0.9em;
           cursor: pointer;
-          transition: background-color 0.2s;
         }
         .wikilink:hover {
-          background-color: rgba(var(--color-graph-component), 0.1);
+          text-decoration: underline;
         }
       `}</style>
     </div>
@@ -351,23 +357,11 @@ function deriveWikiStats(content: string | null) {
 function deriveDeveloperInsights(content: string | null) {
   const value = (content || '').toLowerCase();
   return [
-    { label: 'Has setup/install details', ok: /install|setup|run|start/.test(value) },
-    { label: 'Has architecture notes', ok: /architecture|flow|design|module/.test(value) },
-    { label: 'Has API/endpoint references', ok: /api|endpoint|route|http/.test(value) },
-    {
-      label: 'Has debugging/troubleshooting hints',
-      ok: /error|debug|troubleshoot|issue/.test(value),
-    },
+    { label: 'Setup & Installation', ok: /install|setup|run|start/.test(value) },
+    { label: 'Architecture & Design', ok: /architecture|flow|design|module/.test(value) },
+    { label: 'API & Endpoints', ok: /api|endpoint|route|http/.test(value) },
+    { label: 'Debugging & Issues', ok: /error|debug|troubleshoot|issue/.test(value) },
   ];
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-app-border bg-app-background px-2 py-2">
-      <div className="text-[14px] font-black text-app-text">{value}</div>
-      <div className="text-[10px] uppercase tracking-widest text-app-muted">{label}</div>
-    </div>
-  );
 }
 
 function escapeHtml(value: string): string {
@@ -401,35 +395,7 @@ function sanitizeHtml(value: string): string {
   return doc.body.innerHTML;
 }
 
-function MetaPill({
-  icon,
-  label,
-  value,
-  mono,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-start gap-2 rounded-xl border border-app-border bg-app-background/70 px-3 py-2.5">
-      <span className="mt-0.5 text-app-muted">{icon}</span>
-      <span className="min-w-0">
-        <span className="block text-[10px] font-black uppercase tracking-widest text-app-muted">
-          {label}
-        </span>
-        <span
-          className={`block truncate text-[12px] font-semibold text-app-text ${mono ? 'font-mono' : ''}`}
-          title={value}
-        >
-          {value}
-        </span>
-      </span>
-    </div>
-  );
-}
-
-function wikiFileName(path: string) {
+function wikiFileName(path: string | null) {
+  if (!path) return '';
   return `${path.replace(/[\\/]/g, '_')}.md`;
 }

@@ -8,6 +8,7 @@ mod llm;
 mod logging;
 mod metadata;
 mod parser;
+mod runbook;
 mod search;
 mod settings;
 mod watcher;
@@ -15,13 +16,14 @@ mod wiki;
 
 use api::{get_agent_api_status, start_agent_api, stop_agent_api, AgentApiState};
 use commands::{
-    ask_local, check_file_changed, clear_search_index, detect_database_structure, generate_wiki,
-    get_app_version, get_file_metadata, get_graph_context, get_graph_symbols, get_graph_view,
-    get_index_status, get_local_llm_status, get_provider_settings, get_wiki_content, hybrid_search,
-    index_file, index_file_to_graph, index_path, parse_source_file, rebuild_search_index,
-    record_file_metadata, resolve_project_root, search_code, set_embedding_model_path,
+    ask_local, check_file_changed, clear_search_index, detect_database_structure,
+    discover_runbook_commands, generate_wiki, get_app_version, get_file_metadata,
+    get_graph_context, get_graph_symbols, get_graph_view, get_index_status, get_local_llm_status,
+    get_provider_settings, get_runbook_processes, get_wiki_content, hybrid_search, index_file,
+    index_file_to_graph, index_path, parse_source_file, rebuild_search_index, record_file_metadata,
+    resolve_project_root, restart_runbook_process, search_code, set_embedding_model_path,
     set_last_project_path, set_local_model_path, set_provider, set_workspace_root, start_local_llm,
-    stop_local_llm,
+    start_runbook_process, stop_local_llm, stop_runbook_process,
 };
 use settings::SettingsStore;
 use tauri::{Manager, RunEvent};
@@ -37,6 +39,7 @@ fn main() {
         .manage(AgentApiState::new())
         .manage(SettingsStore::new())
         .manage(llm::local::LocalLlmState::new())
+        .manage(runbook::RunbookState::new())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().map_err(|_| {
                 std::io::Error::new(
@@ -68,6 +71,11 @@ fn main() {
             get_graph_view,
             get_index_status,
             get_provider_settings,
+            discover_runbook_commands,
+            start_runbook_process,
+            stop_runbook_process,
+            restart_runbook_process,
+            get_runbook_processes,
             get_wiki_content,
             generate_wiki,
             hybrid_search,
@@ -101,6 +109,8 @@ fn main() {
             if let Err(error) = llm_state.kill_child_if_running() {
                 eprintln!("Failed to stop llama-server on app exit: {error}");
             }
+            let runbook_state = app_handle.state::<runbook::RunbookState>();
+            runbook_state.stop_all();
         }
     });
 }
