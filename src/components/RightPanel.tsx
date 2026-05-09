@@ -657,12 +657,16 @@ function sanitizeHtml(value: string): string {
     'div',
     'span',
   ]);
+  const allowedAttributes: Record<string, Set<string>> = {
+    th: new Set(['colspan', 'rowspan']),
+    td: new Set(['colspan', 'rowspan']),
+  };
 
   doc.body.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
     node.remove();
   });
 
-  doc.body.querySelectorAll('a, img').forEach((node) => {
+  doc.body.querySelectorAll('a, img, video, audio, source').forEach((node) => {
     const replacement = doc.createElement('span');
     replacement.textContent = node.textContent ?? '';
     node.replaceWith(replacement);
@@ -678,12 +682,27 @@ function sanitizeHtml(value: string): string {
     for (const attr of attrs) {
       const name = attr.name.toLowerCase();
       const val = attr.value.trim().toLowerCase();
-      if (
+      const tagAllowlist = allowedAttributes[tag];
+      const isAllowedAttribute = tagAllowlist?.has(name) ?? false;
+      const blockedName =
         name.startsWith('on') ||
+        name === 'style' ||
+        name === 'class' ||
+        name === 'id' ||
         name === 'href' ||
         name === 'src' ||
-        val.startsWith('javascript:')
-      ) {
+        name === 'srcset' ||
+        name === 'poster' ||
+        name === 'formaction' ||
+        name === 'background' ||
+        name.startsWith('data-');
+      const blockedValueProtocol =
+        val.startsWith('javascript:') ||
+        val.startsWith('data:') ||
+        val.startsWith('http:') ||
+        val.startsWith('https:') ||
+        val.startsWith('//');
+      if (!isAllowedAttribute || blockedName || blockedValueProtocol) {
         element.removeAttribute(attr.name);
       }
     }

@@ -53,7 +53,7 @@ pub fn detect_and_parse(workspace_root: &Path) -> Result<Option<DatabaseSchema>,
     ];
     for path in direct_prisma_candidates {
         if path.is_file() {
-            return parse_prisma_schema(&path).map(Some);
+            return parse_prisma_schema(&path, workspace_root).map(Some);
         }
     }
 
@@ -117,13 +117,13 @@ pub fn detect_and_parse(workspace_root: &Path) -> Result<Option<DatabaseSchema>,
     }
 
     if let Some(path) = first_prisma {
-        return parse_prisma_schema(&path).map(Some);
+        return parse_prisma_schema(&path, workspace_root).map(Some);
     }
 
     if !sql_candidates.is_empty() {
         let mut parsed_schemas = Vec::new();
         for path in sql_candidates {
-            let parsed = parse_sql_schema(&path)?;
+            let parsed = parse_sql_schema(&path, workspace_root)?;
             if !parsed.tables.is_empty() {
                 parsed_schemas.push(parsed);
             }
@@ -139,7 +139,7 @@ pub fn detect_and_parse(workspace_root: &Path) -> Result<Option<DatabaseSchema>,
         let mut sources = Vec::new();
         for path in model_candidates {
             if let Some((table, rels)) = parse_mongoose_model(&path)? {
-                sources.push(path.to_string_lossy().to_string());
+                sources.push(relative_path_str(workspace_root, &path));
                 tables.push(table);
                 relationships.extend(rels);
             }
@@ -147,7 +147,7 @@ pub fn detect_and_parse(workspace_root: &Path) -> Result<Option<DatabaseSchema>,
         if !tables.is_empty() {
             return Ok(Some(DatabaseSchema {
                 provider: "mongodb".to_string(),
-                source: workspace_root.to_string_lossy().to_string(),
+                source: relative_path_str(workspace_root, workspace_root),
                 sources,
                 tables,
                 relationships,
@@ -158,7 +158,7 @@ pub fn detect_and_parse(workspace_root: &Path) -> Result<Option<DatabaseSchema>,
     if let Some(provider) = inferred_provider {
         return Ok(Some(DatabaseSchema {
             provider,
-            source: workspace_root.to_string_lossy().to_string(),
+            source: relative_path_str(workspace_root, workspace_root),
             sources: Vec::new(),
             tables: Vec::new(),
             relationships: Vec::new(),
@@ -166,6 +166,12 @@ pub fn detect_and_parse(workspace_root: &Path) -> Result<Option<DatabaseSchema>,
     }
 
     Ok(None)
+}
+
+fn relative_path_str(workspace_root: &Path, path: &Path) -> String {
+    path.strip_prefix(workspace_root)
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string_lossy().to_string())
 }
 
 fn should_skip_path(path: &Path) -> bool {
@@ -210,7 +216,7 @@ fn is_sql_schema_candidate(path: &Path, file_name_lower: &str) -> bool {
         || path_lower.contains("\\db\\")
 }
 
-fn parse_prisma_schema(path: &Path) -> Result<DatabaseSchema, String> {
+fn parse_prisma_schema(path: &Path, workspace_root: &Path) -> Result<DatabaseSchema, String> {
     let content = fs::read_to_string(path)
         .map_err(|error| format!("failed to read Prisma schema '{}': {error}", path.display()))?;
 
@@ -278,14 +284,14 @@ fn parse_prisma_schema(path: &Path) -> Result<DatabaseSchema, String> {
 
     Ok(DatabaseSchema {
         provider,
-        source: path.to_string_lossy().to_string(),
-        sources: vec![path.to_string_lossy().to_string()],
+        source: relative_path_str(workspace_root, path),
+        sources: vec![relative_path_str(workspace_root, path)],
         tables,
         relationships,
     })
 }
 
-fn parse_sql_schema(path: &Path) -> Result<DatabaseSchema, String> {
+fn parse_sql_schema(path: &Path, workspace_root: &Path) -> Result<DatabaseSchema, String> {
     let content = fs::read_to_string(path)
         .map_err(|error| format!("failed to read SQL schema '{}': {error}", path.display()))?;
 
@@ -311,19 +317,19 @@ fn parse_sql_schema(path: &Path) -> Result<DatabaseSchema, String> {
 
         while let Some(def_line) = lines.peek().copied() {
             let definition = def_line.trim().trim_end_matches(',');
+            let definition_lower = definition.to_ascii_lowercase();
             if definition.starts_with(");") || definition == ")" {
                 lines.next();
                 break;
             }
 
-            if definition.to_ascii_lowercase().starts_with("primary key") {
+            if definition_lower.starts_with("primary key") {
                 primary_keys.extend(extract_sql_constraint_columns(definition));
                 lines.next();
                 continue;
             }
 
-            if definition.to_ascii_lowercase().starts_with("constraint ")
-                || definition.to_ascii_lowercase().starts_with("foreign key")
+            if is_table_constraint_definition(&definition_lower)
             {
                 if let Some((local_col, ref_table, ref_col)) =
                     extract_sql_foreign_key(definition, &table_name)
@@ -360,11 +366,21 @@ fn parse_sql_schema(path: &Path) -> Result<DatabaseSchema, String> {
 
     Ok(DatabaseSchema {
         provider,
-        source: path.to_string_lossy().to_string(),
-        sources: vec![path.to_string_lossy().to_string()],
+        source: relative_path_str(workspace_root, path),
+        sources: vec![relative_path_str(workspace_root, path)],
         tables,
         relationships,
     })
+}
+
+fn is_table_constraint_definition(definition_lower: &str) -> bool {
+    definition_lower.starts_with("constraint ")
+        || definition_lower.starts_with("foreign key")
+        || definition_lower.starts_with("unique")
+        || definition_lower.starts_with("check")
+        || definition_lower.starts_with("exclude")
+        || definition_lower.starts_with("index")
+        || definition_lower.starts_with("key ")
 }
 
 fn merge_sql_schemas(workspace_root: &Path, schemas: Vec<DatabaseSchema>) -> DatabaseSchema {
@@ -418,7 +434,7 @@ fn merge_sql_schemas(workspace_root: &Path, schemas: Vec<DatabaseSchema>) -> Dat
 
     DatabaseSchema {
         provider,
-        source: workspace_root.to_string_lossy().to_string(),
+        source: relative_path_str(workspace_root, workspace_root),
         sources,
         tables: table_map.into_values().collect(),
         relationships,
@@ -776,27 +792,89 @@ fn extract_model_name(content: &str, path: &Path) -> String {
 
 fn find_interface_block(content: &str) -> Option<(usize, usize)> {
     let start = content.find("export interface ")?;
-    let open = content[start..].find('{')? + start + 1;
-    let close = content[open..].find("}\n")? + open;
-    Some((open, close))
+    let open = content[start..].find('{')? + start;
+    find_brace_block(content, open).map(|(block_start, block_end)| (block_start + 1, block_end))
 }
 
 fn find_schema_block(content: &str) -> Option<(usize, usize)> {
     let schema_pos = content.find("new Schema(")?;
-    let open = content[schema_pos..].find('{')? + schema_pos + 1;
-    let mut depth = 1usize;
+    let open = content[schema_pos..].find('{')? + schema_pos;
+    find_brace_block(content, open).map(|(block_start, block_end)| (block_start + 1, block_end))
+}
+
+fn find_brace_block(content: &str, open_brace_index: usize) -> Option<(usize, usize)> {
+    let mut depth = 0usize;
+    let mut index = open_brace_index;
     let bytes = content.as_bytes();
-    let mut index = open;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
     while index < bytes.len() {
-        match bytes[index] as char {
-            '{' => depth += 1,
-            '}' => {
+        let ch = bytes[index] as char;
+        let next = bytes.get(index + 1).copied().map(char::from);
+        let prev = if index > 0 {
+            Some(bytes[index - 1] as char)
+        } else {
+            None
+        };
+
+        if in_line_comment {
+            if ch == '\n' {
+                in_line_comment = false;
+            }
+            index += 1;
+            continue;
+        }
+        if in_block_comment {
+            if ch == '*' && next == Some('/') {
+                in_block_comment = false;
+                index += 2;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+        if !in_single_quote && !in_double_quote && !in_backtick {
+            if ch == '/' && next == Some('/') {
+                in_line_comment = true;
+                index += 2;
+                continue;
+            }
+            if ch == '/' && next == Some('*') {
+                in_block_comment = true;
+                index += 2;
+                continue;
+            }
+        }
+
+        if !in_double_quote && !in_backtick && ch == '\'' && prev != Some('\\') {
+            in_single_quote = !in_single_quote;
+            index += 1;
+            continue;
+        }
+        if !in_single_quote && !in_backtick && ch == '"' && prev != Some('\\') {
+            in_double_quote = !in_double_quote;
+            index += 1;
+            continue;
+        }
+        if !in_single_quote && !in_double_quote && ch == '`' && prev != Some('\\') {
+            in_backtick = !in_backtick;
+            index += 1;
+            continue;
+        }
+
+        if !in_single_quote && !in_double_quote && !in_backtick {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
-                    return Some((open, index));
+                    return Some((open_brace_index, index));
                 }
             }
-            _ => {}
         }
         index += 1;
     }

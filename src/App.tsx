@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { ErrorBanner } from './components/ErrorBanner';
 import { MainPanel } from './components/MainPanel';
@@ -93,6 +94,7 @@ export default function App() {
   const projectLoadRunRef = useRef(0);
   const lastProgressUpdateRef = useRef({ at: 0, filesSeen: -1 });
   const projectSnapshotCacheRef = useRef<Map<string, ProjectSnapshot>>(new Map());
+  const hasHydratedProjectPathRef = useRef(false);
 
   useEffect(() => {
     void invoke<string>('get_app_version')
@@ -155,15 +157,9 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (!showSplash) {
-      return undefined;
+    if (!hasHydratedProjectPathRef.current) {
+      return;
     }
-
-    const timer = window.setTimeout(() => setShowSplash(false), 2800);
-    return () => window.clearTimeout(timer);
-  }, [showSplash]);
-
-  useEffect(() => {
     void setLastProjectPath(projectPath).catch(() => {});
   }, [projectPath]);
 
@@ -324,24 +320,28 @@ export default function App() {
         }
         if (!isCurrentRun()) return;
         setDatabaseSchema(detectedDatabaseSchema);
-        if (detectedDatabaseSchema) {
-          databaseViewEnabled = window.confirm('Database detected. Add Database view?');
-        }
-        setDatabaseViewEnabled(databaseViewEnabled);
-        projectSnapshotCacheRef.current.set(path, {
-          indexPathSummary: summary,
-          searchIndexSummary: searchSummary,
-          wikiSummary,
-          databaseSchema: detectedDatabaseSchema,
-          databaseViewEnabled,
-        });
-        if (summary.errors.length > 0) {
-          setIndexError(summary.errors.join('\n'));
-        }
         setProjectLoading(
           false,
           `100% · Ready: ${summary.filesSeen} indexed · ${summary.filesSkipped} skipped · ${summary.errors.length} errors`,
         );
+        if (detectedDatabaseSchema && isCurrentRun()) {
+          const shouldEnableDatabaseView = await confirm('Database detected. Add Database view?');
+          if (!isCurrentRun()) return;
+          databaseViewEnabled = shouldEnableDatabaseView;
+        }
+        if (isCurrentRun()) {
+          setDatabaseViewEnabled(databaseViewEnabled);
+          projectSnapshotCacheRef.current.set(path, {
+            indexPathSummary: summary,
+            searchIndexSummary: searchSummary,
+            wikiSummary,
+            databaseSchema: detectedDatabaseSchema,
+            databaseViewEnabled,
+          });
+        }
+        if (summary.errors.length > 0) {
+          setIndexError(summary.errors.join('\n'));
+        }
       } catch (error) {
         if (!isCurrentRun()) return;
         const message = error instanceof Error ? error.message : String(error);
@@ -381,12 +381,15 @@ export default function App() {
   useEffect(() => {
     void getProviderSettings()
       .then((settings) => {
+        hasHydratedProjectPathRef.current = true;
         if (settings.lastProjectPath) {
           return loadProject(settings.lastProjectPath);
         }
         return undefined;
       })
-      .catch(() => {});
+      .catch(() => {
+        hasHydratedProjectPathRef.current = true;
+      });
   }, [loadProject]);
 
   if (showSplash) {

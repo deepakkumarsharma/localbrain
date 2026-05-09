@@ -61,6 +61,7 @@ export function DatabaseView({ schema }: DatabaseViewProps) {
               <div className="text-xs font-bold text-app-muted">{filteredTables.length} shown</div>
             </div>
             <input
+              aria-label="Search tables"
               className="mb-3 w-full rounded-lg border border-app-border bg-app-background px-2.5 py-2 text-sm text-app-text outline-none focus:border-app-accent"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -156,11 +157,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function TableDetails({ table }: { table: DatabaseTable }) {
   const generatedType = useMemo(() => {
+    const interfaceName = sanitizeIdentifier(table.name, { pascalCase: true });
     const fields = table.columns.map((column) => {
       const type = toTypeScriptType(column.dataType, column.isNullable);
-      return `  ${column.name}: ${type};`;
+      const key = isValidIdentifier(column.name) && !isReservedWord(column.name)
+        ? column.name
+        : JSON.stringify(column.name);
+      return `  ${key}: ${type};`;
     });
-    return `export interface ${table.name} {\n${fields.join('\n')}\n}`;
+    return `export interface ${interfaceName} {\n${fields.join('\n')}\n}`;
   }, [table]);
 
   return (
@@ -208,6 +213,51 @@ function TableDetails({ table }: { table: DatabaseTable }) {
       </pre>
     </div>
   );
+}
+
+const RESERVED_WORDS = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete',
+  'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for', 'function', 'if',
+  'import', 'in', 'instanceof', 'new', 'null', 'return', 'super', 'switch', 'this', 'throw',
+  'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'as', 'implements', 'interface',
+  'let', 'package', 'private', 'protected', 'public', 'static', 'yield', 'any', 'boolean',
+  'constructor', 'declare', 'get', 'module', 'require', 'number', 'set', 'string', 'symbol',
+  'type', 'from', 'of',
+]);
+
+function isReservedWord(value: string) {
+  return RESERVED_WORDS.has(value);
+}
+
+function isValidIdentifier(value: string) {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value);
+}
+
+function sanitizeIdentifier(value: string, options?: { pascalCase?: boolean }) {
+  const parts = value
+    .replace(/[^A-Za-z0-9_$]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const base = parts.length
+    ? parts
+        .map((part, index) => {
+          const lower = part.toLowerCase();
+          if (!options?.pascalCase && index > 0) {
+            return lower.charAt(0).toUpperCase() + lower.slice(1);
+          }
+          if (options?.pascalCase) {
+            return lower.charAt(0).toUpperCase() + lower.slice(1);
+          }
+          return lower;
+        })
+        .join('')
+    : 'GeneratedType';
+  const prefixed = /^[0-9]/.test(base) ? `T${base}` : base;
+  if (!isValidIdentifier(prefixed) || isReservedWord(prefixed)) {
+    return `T${prefixed.replace(/[^A-Za-z0-9_$]/g, '_')}`;
+  }
+  return prefixed;
 }
 
 function toTypeScriptType(raw: string, nullable: boolean) {

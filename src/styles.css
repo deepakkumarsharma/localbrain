@@ -184,13 +184,13 @@ input {
 
 @keyframes flow-node-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(var(--color-app-accent), 0.25);
+    box-shadow: 0 0 0 0 rgb(var(--color-app-accent) / 0.25);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(var(--color-app-accent), 0);
+    box-shadow: 0 0 0 10px rgb(var(--color-app-accent) / 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(var(--color-app-accent), 0);
+    box-shadow: 0 0 0 0 rgb(var(--color-app-accent) / 0);
   }
 }
 
@@ -201,15 +201,15 @@ input {
 @keyframes loader-logo-pulse {
   0% {
     transform: scale(1);
-    filter: drop-shadow(0 0 0 rgba(var(--color-app-accent), 0));
+    filter: drop-shadow(0 0 0 rgb(var(--color-app-accent) / 0));
   }
   50% {
     transform: scale(1.05);
-    filter: drop-shadow(0 0 10px rgba(var(--color-app-accent), 0.35));
+    filter: drop-shadow(0 0 10px rgb(var(--color-app-accent) / 0.35));
   }
   100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 0 rgba(var(--color-app-accent), 0));
+    filter: drop-shadow(0 0 0 rgb(var(--color-app-accent) / 0));
   }
 }
 
