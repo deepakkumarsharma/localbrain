@@ -3,29 +3,30 @@
 @tailwind utilities;
 
 :root {
-  /* Dark Mode Palette - Higher Contrast */
-  --color-app-background: 3 3 5;
-  --color-app-panel: 9 9 12;
-  --color-app-panel-soft: 18 18 22;
-  --color-app-border: 45 45 55;
-  --color-app-text: 255 255 255; /* Pure white for primary text */
-  --color-app-muted: 161 161 170; /* zinc-400 for better secondary readability */
-  --color-app-accent: 96 165 250; /* blue-400 */
-  --color-app-accent-soft: 30 58 138;
-  --color-app-success: 52 211 153; /* emerald-400 */
-  --color-app-warning: 251 191 36; /* amber-400 */
-  --color-app-error: 248 113 113; /* red-400 */
+  /* Dark Mode Palette (context/ui-context.md) */
+  --color-app-background: 16 19 26; /* #10131a */
+  --color-app-panel: 23 27 36; /* #171b24 */
+  --color-app-panel-soft: 32 38 54; /* #202636 */
+  --color-app-border: 47 56 72; /* #2f3848 */
+  --color-app-text: 232 237 245; /* #e8edf5 */
+  --color-app-muted: 154 167 184; /* #9aa7b8 */
+  --color-app-accent: 155 183 255; /* #9bb7ff */
+  --color-app-accent-soft: 38 54 87; /* #263657 */
+  --color-app-success: 125 223 179; /* #7ddfb3 */
+  --color-app-warning: 255 209 102; /* #ffd166 */
+  --color-app-error: 255 154 162; /* #ff9aa2 */
 
-  --color-graph-feature: 96 165 250;
-  --color-graph-component: 167 139 250;
-  --color-graph-api: 52 211 153;
-  --color-graph-service: 251 191 36;
-  --color-graph-model: 248 113 113;
-  --color-graph-hook: 56 189 248;
-  --color-graph-external: 244 114 182;
-  --color-graph-node-fill: 15 23 42;
-  --color-graph-node-active: 30 58 138;
-  --color-graph-edge: 100 116 139;
+  /* Graph colors are derived from the same app palette only */
+  --color-graph-feature: 155 183 255;
+  --color-graph-component: 38 54 87;
+  --color-graph-api: 125 223 179;
+  --color-graph-service: 255 209 102;
+  --color-graph-model: 255 154 162;
+  --color-graph-hook: 154 167 184;
+  --color-graph-external: 232 237 245;
+  --color-graph-node-fill: 23 27 36;
+  --color-graph-node-active: 38 54 87;
+  --color-graph-edge: 154 167 184;
 
   font-family:
     'Inter',
@@ -36,8 +37,8 @@
   line-height: 1.6;
   font-weight: 450; /* Slightly bolder base weight */
   color-scheme: dark;
-  background: #030305;
-  color: #ffffff;
+  background: #10131a;
+  color: #e8edf5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -45,28 +46,28 @@
 }
 
 :root[data-theme='light'] {
-  /* Light Mode Palette - Clearer, less washed */
-  --color-app-background: 247 250 255;
-  --color-app-panel: 255 255 255;
-  --color-app-panel-soft: 240 245 255;
-  --color-app-border: 186 200 220;
-  --color-app-text: 15 23 42; /* slate-900 */
-  --color-app-muted: 51 65 85; /* slate-700 */
-  --color-app-accent: 29 78 216; /* blue-700 */
-  --color-app-accent-soft: 219 234 254;
-  --color-app-success: 4 120 87; /* emerald-700 */
-  --color-app-warning: 180 83 9; /* amber-700 */
-  --color-app-error: 185 28 28; /* red-700 */
+  /* Light Mode Palette (context/ui-context.md) */
+  --color-app-background: 248 250 252; /* #f8fafc */
+  --color-app-panel: 255 255 255; /* #ffffff */
+  --color-app-panel-soft: 241 245 249; /* #f1f5f9 */
+  --color-app-border: 219 228 238; /* #dbe4ee */
+  --color-app-text: 30 41 59; /* #1e293b */
+  --color-app-muted: 100 116 139; /* #64748b */
+  --color-app-accent: 124 156 255; /* #7c9cff */
+  --color-app-accent-soft: 231 237 255; /* #e7edff */
+  --color-app-success: 107 207 159; /* #6bcf9f */
+  --color-app-warning: 246 199 107; /* #f6c76b */
+  --color-app-error: 242 139 130; /* #f28b82 */
 
-  --color-graph-feature: 29 78 216;
-  --color-graph-component: 109 40 217;
-  --color-graph-api: 5 150 105;
-  --color-graph-service: 180 83 9;
-  --color-graph-model: 185 28 28;
-  --color-graph-hook: 3 105 161;
-  --color-graph-external: 157 23 77;
+  --color-graph-feature: 124 156 255;
+  --color-graph-component: 231 237 255;
+  --color-graph-api: 107 207 159;
+  --color-graph-service: 246 199 107;
+  --color-graph-model: 242 139 130;
+  --color-graph-hook: 100 116 139;
+  --color-graph-external: 30 41 59;
   --color-graph-node-fill: 255 255 255;
-  --color-graph-node-active: 219 234 254;
+  --color-graph-node-active: 231 237 255;
   --color-graph-edge: 100 116 139;
 
   font-family:
@@ -75,8 +76,8 @@
     -apple-system,
     sans-serif;
   color-scheme: light;
-  background: #f7faff;
-  color: #0f172a;
+  background: #f8fafc;
+  color: #1e293b;
 }
 
 html,
@@ -183,13 +184,13 @@ input {
 
 @keyframes flow-node-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.25);
+    box-shadow: 0 0 0 0 rgba(var(--color-app-accent), 0.25);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(96, 165, 250, 0);
+    box-shadow: 0 0 0 10px rgba(var(--color-app-accent), 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+    box-shadow: 0 0 0 0 rgba(var(--color-app-accent), 0);
   }
 }
 
@@ -200,15 +201,15 @@ input {
 @keyframes loader-logo-pulse {
   0% {
     transform: scale(1);
-    filter: drop-shadow(0 0 0 rgba(59, 130, 246, 0));
+    filter: drop-shadow(0 0 0 rgba(var(--color-app-accent), 0));
   }
   50% {
     transform: scale(1.05);
-    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.35));
+    filter: drop-shadow(0 0 10px rgba(var(--color-app-accent), 0.35));
   }
   100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 0 rgba(59, 130, 246, 0));
+    filter: drop-shadow(0 0 0 rgba(var(--color-app-accent), 0));
   }
 }
 
@@ -216,16 +217,199 @@ input {
   animation: loader-logo-pulse 1.6s ease-in-out infinite;
 }
 
+@keyframes splash-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-fill-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.splash-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  min-width: 1024px;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      900px 420px at 50% 102%,
+      rgb(var(--color-app-accent) / 0.16) 0%,
+      rgb(var(--color-app-accent) / 0.04) 38%,
+      transparent 70%
+    ),
+    linear-gradient(
+      165deg,
+      rgb(var(--color-app-background)) 0%,
+      rgb(var(--color-app-panel-soft) / 0.86) 52%,
+      rgb(var(--color-app-background)) 100%
+    );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.splash-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.splash-orb-a {
+  width: 340px;
+  height: 340px;
+  left: calc(50% - 320px);
+  top: calc(50% - 220px);
+  background: rgb(var(--color-app-accent) / 0.1);
+}
+
+.splash-orb-b {
+  width: 260px;
+  height: 260px;
+  left: calc(50% + 70px);
+  top: calc(50% - 40px);
+  background: rgb(var(--color-app-success) / 0.08);
+}
+
+.splash-logo-wrap {
+  position: relative;
+  z-index: 1;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  background: linear-gradient(
+    160deg,
+    rgb(var(--color-app-panel)) 0%,
+    rgb(var(--color-app-panel-soft)) 100%
+  );
+  border: 1px solid rgb(var(--color-app-border));
+  box-shadow:
+    0 10px 36px rgb(var(--color-app-accent) / 0.16),
+    inset 0 1px 0 rgb(var(--color-app-text) / 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: splash-fade-in-up 360ms ease-out forwards;
+}
+
+.splash-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.splash-title {
+  position: relative;
+  z-index: 1;
+  margin-top: 20px;
+  font-size: 1.45rem;
+  font-family: 'Geist Sans', system-ui, sans-serif;
+  font-weight: 650;
+  color: rgb(var(--color-app-text));
+  letter-spacing: -0.02em;
+  opacity: 0;
+  animation: splash-fade-in-up 360ms ease-out 120ms forwards;
+}
+
+.splash-subtitle {
+  position: relative;
+  z-index: 1;
+  margin-top: 7px;
+  font-size: 0.82rem;
+  font-family: 'Geist Sans', system-ui, sans-serif;
+  color: rgb(var(--color-app-muted));
+  opacity: 0;
+  animation: splash-fade-in-up 360ms ease-out 240ms forwards;
+}
+
+.splash-track {
+  position: relative;
+  z-index: 1;
+  margin-top: 36px;
+  width: 220px;
+  height: 6px;
+  background: rgb(var(--color-app-panel));
+  border: 1px solid rgb(var(--color-app-border));
+  border-radius: 99px;
+  overflow: hidden;
+  opacity: 0;
+  animation: splash-fade-in-up 360ms ease-out 320ms forwards;
+}
+
+.splash-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--color-app-accent)) 0%,
+    rgb(var(--color-app-success)) 100%
+  );
+  border-radius: 99px;
+  box-shadow: 0 0 14px rgb(var(--color-app-accent) / 0.46);
+  animation: splash-fill-progress 2s ease-in-out 420ms forwards;
+}
+
+.splash-loading {
+  position: relative;
+  z-index: 1;
+  margin-top: 10px;
+  font-size: 0.74rem;
+  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+  color: rgb(var(--color-app-muted));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  animation: splash-fade-in-up 320ms ease-out 480ms forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .flow-line-shot,
   .flow-line-shot-delay,
   .flow-node-pulse,
   .flow-status-dot,
-  .loader-logo-pulse {
+  .loader-logo-pulse,
+  .splash-orb,
+  .splash-logo-wrap,
+  .splash-title,
+  .splash-subtitle,
+  .splash-track,
+  .splash-fill,
+  .splash-loading {
     animation: none;
   }
 
   .flow-progress-fill {
     transition: none;
+  }
+
+  .splash-logo-wrap,
+  .splash-title,
+  .splash-subtitle,
+  .splash-track {
+    opacity: 1;
+    transform: none;
+  }
+
+  .splash-fill {
+    width: 100%;
+  }
+
+  .splash-loading {
+    opacity: 1;
+    transform: none;
   }
 }

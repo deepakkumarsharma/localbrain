@@ -21,6 +21,7 @@ pub struct ProviderSettings {
     pub cloud_enabled: bool,
     pub local_model_path: Option<String>,
     pub embedding_model_path: Option<String>,
+    pub last_project_path: Option<String>,
 }
 
 pub struct SettingsStore {
@@ -35,6 +36,7 @@ impl SettingsStore {
                 cloud_enabled: false,
                 local_model_path: None,
                 embedding_model_path: None,
+                last_project_path: None,
             }),
         }
     }
@@ -101,6 +103,19 @@ impl SettingsStore {
             *settings = updated.clone();
         }
 
+        Ok(updated)
+    }
+
+    pub fn set_last_project_path(
+        &self,
+        app: &AppHandle,
+        last_project_path: Option<String>,
+    ) -> Result<ProviderSettings, String> {
+        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
+        settings.last_project_path = last_project_path;
+        let updated = settings.clone();
+        drop(settings);
+        persistence::save_settings(app, &updated)?;
         Ok(updated)
     }
 }

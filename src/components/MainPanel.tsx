@@ -3,6 +3,7 @@ import { Download, FileText, GitBranch, Loader2, Search, Workflow, X } from 'luc
 import { FlowView } from './FlowView';
 import { GraphView } from './GraphView';
 import { WikiView } from './WikiView';
+import { DatabaseView } from './DatabaseView';
 import type { GraphViewData } from '../lib/graph';
 import { getGraphView } from '../lib/graph';
 import { generate_wiki, getWikiContent } from '../lib/wiki';
@@ -12,6 +13,7 @@ const views = [
   { id: 'graph', label: 'Graph View' },
   { id: 'wiki', label: 'Wiki View' },
   { id: 'flow', label: 'Flow View' },
+  { id: 'database', label: 'Database View' },
 ] as const;
 
 export function MainPanel() {
@@ -24,6 +26,7 @@ export function MainPanel() {
     projectPath,
     isProjectLoading,
     graphView,
+    databaseSchema,
     setActivePanel,
     setGraphError,
     setGraphView,
@@ -125,6 +128,12 @@ export function MainPanel() {
       run: () => setActivePanel('flow'),
     },
     {
+      label: 'Open Database View',
+      detail: 'Inspect detected tables and relationships',
+      icon: Workflow,
+      run: () => setActivePanel('database'),
+    },
+    {
       label: 'Export Wiki',
       detail: 'Export wiki markdown for the selected source file',
       icon: Download,
@@ -160,11 +169,6 @@ export function MainPanel() {
               >
                 {view.label}
               </button>
-            ))}
-          </div>
-          <div className="hidden items-center gap-5 text-[12px] font-bold text-app-muted lg:flex">
-            {dynamicLegendItems.map((item) => (
-              <Legend key={item.kind} label={item.label} colorVar={item.colorVar} />
             ))}
           </div>
         </div>
@@ -214,12 +218,17 @@ export function MainPanel() {
           <WikiView onGenerateWiki={handleGenerateWiki} isGeneratingWiki={isGeneratingWiki} />
         ) : null}
         {activePanel === 'flow' ? <FlowView /> : null}
+        {activePanel === 'database' ? <DatabaseView schema={databaseSchema} /> : null}
       </section>
 
       <div className="flex h-8 items-center justify-between border-t border-app-border bg-app-panel px-4 text-[11px] font-bold text-app-muted">
-        <span>ALL DATA RUNS LOCALLY · SQLITE + GRAPH STORE · NO CLOUD SYNC</span>
-        <span className="bg-app-panelSoft px-2 py-0.5 rounded border border-app-border">
-          v0.1.0
+        <div className="flex items-center gap-5">
+          {dynamicLegendItems.map((item) => (
+            <Legend key={item.kind} label={item.label} colorVar={item.colorVar} />
+          ))}
+        </div>
+        <span className="text-right">
+          ALL DATA RUNS LOCALLY · SQLITE + GRAPH STORE · NO CLOUD SYNC
         </span>
       </div>
 

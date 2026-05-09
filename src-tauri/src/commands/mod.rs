@@ -24,6 +24,20 @@ pub fn get_app_version() -> &'static str {
 }
 
 #[tauri::command]
+pub fn detect_database_structure(
+    path: String,
+) -> Result<Option<crate::database::DatabaseSchema>, String> {
+    let workspace_path = PathBuf::from(path);
+    let canonical = workspace_path
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve workspace path: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("workspace path is not a directory".to_string());
+    }
+    crate::database::detect_and_parse(&canonical)
+}
+
+#[tauri::command]
 pub fn parse_source_file(
     path: String,
     metadata_store: tauri::State<'_, MetadataStore>,
@@ -284,6 +298,15 @@ pub fn set_embedding_model_path(
     settings_store: tauri::State<SettingsStore>,
 ) -> Result<ProviderSettings, String> {
     settings_store.set_embedding_model_path(&app, path)
+}
+
+#[tauri::command]
+pub fn set_last_project_path(
+    app: tauri::AppHandle,
+    path: Option<String>,
+    settings_store: tauri::State<SettingsStore>,
+) -> Result<ProviderSettings, String> {
+    settings_store.set_last_project_path(&app, path)
 }
 
 #[tauri::command]

@@ -11,11 +11,19 @@ import type { ParsedFile } from '../lib/parser';
 import type { SearchIndexSummary, SearchResult } from '../lib/search';
 import type { ChatMessage, Citation } from '../lib/chat';
 import type { AgentApiStatus } from '../lib/api';
+import type { DatabaseSchema } from '../lib/database';
 import type { ProviderSettings } from '../lib/settings';
 import type { WikiSummary } from '../lib/wiki';
 
-type ActivePanel = 'graph' | 'wiki' | 'flow';
+type ActivePanel = 'graph' | 'wiki' | 'flow' | 'database';
 type Theme = 'dark' | 'light';
+
+function getSystemTheme(): Theme {
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+  return 'light';
+}
 
 interface AppState {
   activePanel: ActivePanel;
@@ -54,6 +62,8 @@ interface AppState {
   projectPath: string | null;
   isProjectLoading: boolean;
   projectStatus: string | null;
+  databaseSchema: DatabaseSchema | null;
+  databaseViewEnabled: boolean;
   setActivePanel: (panel: ActivePanel) => void;
   setAppVersion: (version: string) => void;
   setTheme: (theme: Theme) => void;
@@ -88,13 +98,15 @@ interface AppState {
   setLlmRunning: (running: boolean) => void;
   setProjectPath: (path: string | null) => void;
   setProjectLoading: (loading: boolean, status?: string | null) => void;
+  setDatabaseSchema: (schema: DatabaseSchema | null) => void;
+  setDatabaseViewEnabled: (enabled: boolean) => void;
   clearProjectData: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   activePanel: 'flow',
   appVersion: 'loading',
-  theme: 'light',
+  theme: getSystemTheme(),
   activeSourcePath: '',
   lastFileChange: null,
   lastFileChangeAt: null,
@@ -128,6 +140,8 @@ export const useAppStore = create<AppState>((set) => ({
   projectPath: null,
   isProjectLoading: false,
   projectStatus: null,
+  databaseSchema: null,
+  databaseViewEnabled: false,
   setActivePanel: (panel) => set({ activePanel: panel }),
   setAppVersion: (version) => set({ appVersion: version }),
   setTheme: (theme) => set({ theme }),
@@ -191,6 +205,8 @@ export const useAppStore = create<AppState>((set) => ({
   setProjectPath: (path) => set({ projectPath: path }),
   setProjectLoading: (loading, status = null) =>
     set({ isProjectLoading: loading, projectStatus: status }),
+  setDatabaseSchema: (schema) => set({ databaseSchema: schema }),
+  setDatabaseViewEnabled: (enabled) => set({ databaseViewEnabled: enabled }),
   clearProjectData: () =>
     set({
       activeSourcePath: '',
@@ -220,5 +236,7 @@ export const useAppStore = create<AppState>((set) => ({
       chatError: null,
       lastFileChange: '',
       lastFileChangeAt: null,
+      databaseSchema: null,
+      databaseViewEnabled: false,
     }),
 }));

@@ -75,6 +75,10 @@ pub fn start_watcher(
 }
 
 fn should_emit_path(path: &Path) -> bool {
+    if is_generated_wiki_path(path) {
+        return false;
+    }
+
     if path.components().any(|component| {
         let value = component.as_os_str().to_string_lossy();
         matches!(
@@ -111,6 +115,17 @@ fn should_emit_path(path: &Path) -> bool {
     has_supported_extension || is_extensionless_watch_file(path)
 }
 
+fn is_generated_wiki_path(path: &Path) -> bool {
+    let parts = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    parts
+        .windows(2)
+        .any(|window| window[0] == "docs" && window[1] == "wiki")
+}
+
 fn is_extensionless_watch_file(path: &Path) -> bool {
     path.extension().is_none()
         && path.file_name().is_some_and(|name| {
@@ -142,11 +157,15 @@ mod tests {
     fn allows_supported_source_files() {
         assert!(should_emit_path(Path::new("src/App.tsx")));
         assert!(should_emit_path(Path::new("src-tauri/src/main.rs")));
-        assert!(should_emit_path(Path::new("docs/wiki/auth.md")));
+        assert!(should_emit_path(Path::new("docs/architecture/auth.md")));
     }
 
     #[test]
     fn ignores_noise_and_secret_paths() {
+        assert!(!should_emit_path(Path::new("docs/wiki/auth.md")));
+        assert!(!should_emit_path(Path::new(
+            "/workspace/project/docs/wiki/auth.md"
+        )));
         assert!(!should_emit_path(Path::new("node_modules/pkg/index.ts")));
         assert!(!should_emit_path(Path::new(".git/config")));
         assert!(!should_emit_path(Path::new(".env.local")));

@@ -268,6 +268,33 @@ fn repair_llama_runtime_files(app: &AppHandle) -> Result<(), String> {
 }
 
 pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<LocalLlmState>();
+    let port = state.server_port;
+
+    // Acquire the startup lock — this serializes concurrent calls.
+    // If three callers arrive at once, only one proceeds through the spawn
+    // path; the others wait here and then find the server already alive.
+    let _startup_guard = state.startup_lock.lock().await;
+
+    if is_server_alive(port).await {
+        println!("[llama] Reusing healthy server on port {}.", port);
+        return Ok(());
+    }
+
+    // Re-check after acquiring the lock — a concurrent caller may have
+    // already started the server while we were waiting.
+    if state.child.lock().unwrap().is_some() {
+        if is_server_alive(port).await {
+            println!("[llama] Server already running and healthy.");
+            return Ok(());
+        }
+
+        // Stale handle: process died, clear it and fall through to respawn
+        println!("[llama] Stale child detected — clearing and respawning...");
+        let mut child_guard = state.child.lock().unwrap();
+        *child_guard = None;
+    }
+
     if let Err(initial_error) = validate_llama_runtime_files(app) {
         if cfg!(debug_assertions) {
             eprintln!(
@@ -284,28 +311,6 @@ pub async fn start_llama_server(app: &AppHandle) -> Result<(), String> {
                 "{initial_error} Please reinstall Localbrain or run the documented runtime installer."
             ));
         }
-    }
-
-    let state = app.state::<LocalLlmState>();
-    let port = state.server_port;
-
-    // Acquire the startup lock — this serializes concurrent calls.
-    // If three callers arrive at once, only one proceeds through the spawn
-    // path; the others wait here and then find the server already alive.
-    let _startup_guard = state.startup_lock.lock().await;
-
-    // Re-check after acquiring the lock — a concurrent caller may have
-    // already started the server while we were waiting.
-    if state.child.lock().unwrap().is_some() {
-        if is_server_alive(port).await {
-            println!("[llama] Server already running and healthy.");
-            return Ok(());
-        }
-
-        // Stale handle: process died, clear it and fall through to respawn
-        println!("[llama] Stale child detected — clearing and respawning...");
-        let mut child_guard = state.child.lock().unwrap();
-        *child_guard = None;
     }
 
     // Resolve and validate the model path
@@ -385,10 +390,6 @@ pub async fn stop_llama_server(app: &AppHandle) -> Result<(), String> {
 
 pub async fn get_llm_running_status(app: &AppHandle) -> bool {
     let state = app.state::<LocalLlmState>();
-    if !state.is_running() {
-        return false;
-    }
-
     is_server_alive(state.server_port).await
 }
 

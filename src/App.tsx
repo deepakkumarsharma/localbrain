@@ -5,25 +5,30 @@ import { ErrorBanner } from './components/ErrorBanner';
 import { MainPanel } from './components/MainPanel';
 import { RightPanel } from './components/RightPanel';
 import { Sidebar } from './components/Sidebar';
+import { SplashScreen } from './components/SplashScreen';
 import { initFileWatcher } from './lib/fileWatcher';
+import { detectDatabaseStructure } from './lib/database';
+import type { DatabaseSchema } from './lib/database';
 import { indexPath, resolveProjectRoot, setWorkspaceRoot } from './lib/indexer';
 import type { IndexPathSummary, IndexProgressEvent } from './lib/indexer';
 import { clearSearchIndex, rebuildSearchIndex } from './lib/search';
 import type { SearchIndexSummary } from './lib/search';
 import { generate_wiki } from './lib/wiki';
 import type { WikiSummary } from './lib/wiki';
+import { getProviderSettings, setLastProjectPath } from './lib/settings';
 import { useAppStore } from './store/useAppStore';
 
 const DEFAULT_STEP_TIMEOUT_MS = 120_000;
 const INDEXING_TIMEOUT_MS = 1_800_000;
 const SEARCH_REBUILD_TIMEOUT_MS = 600_000;
 const WIKI_TIMEOUT_MS = 600_000;
-const LAST_PROJECT_PATH_KEY = 'localbrain.lastProjectPath';
 
 interface ProjectSnapshot {
   indexPathSummary: IndexPathSummary;
   searchIndexSummary: SearchIndexSummary;
   wikiSummary: WikiSummary;
+  databaseSchema: DatabaseSchema | null;
+  databaseViewEnabled: boolean;
 }
 
 async function withTimeout<T>(
@@ -75,10 +80,13 @@ export default function App() {
     setSearchError,
     setProjectPath,
     setProjectLoading,
+    setDatabaseSchema,
+    setDatabaseViewEnabled,
     clearProjectData,
   } = useAppStore();
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [rightPanelWidth, setRightPanelWidth] = useState(600);
+  const [showSplash, setShowSplash] = useState(true);
   const isResizingSidebar = useRef(false);
   const isResizingRightPanel = useRef(false);
   const watcherUnlistenRef = useRef<(() => void) | null>(null);
@@ -147,11 +155,16 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (projectPath) {
-      window.localStorage.setItem(LAST_PROJECT_PATH_KEY, projectPath);
-    } else {
-      window.localStorage.removeItem(LAST_PROJECT_PATH_KEY);
+    if (!showSplash) {
+      return undefined;
     }
+
+    const timer = window.setTimeout(() => setShowSplash(false), 2800);
+    return () => window.clearTimeout(timer);
+  }, [showSplash]);
+
+  useEffect(() => {
+    void setLastProjectPath(projectPath).catch(() => {});
   }, [projectPath]);
 
   useEffect(() => {
@@ -236,6 +249,8 @@ export default function App() {
           setIndexPathResult(cachedSnapshot.indexPathSummary);
           setSearchIndexResult(cachedSnapshot.searchIndexSummary);
           setWikiResult(cachedSnapshot.wikiSummary);
+          setDatabaseSchema(cachedSnapshot.databaseSchema);
+          setDatabaseViewEnabled(cachedSnapshot.databaseViewEnabled);
 
           watcherUnlistenRef.current = await withTimeout(
             initFileWatcher(path),
@@ -250,6 +265,8 @@ export default function App() {
         clearProjectData();
         setIndexProgress(null);
         setProjectPath(path);
+        setDatabaseSchema(null);
+        setDatabaseViewEnabled(false);
         if (path !== selectedPath) {
           setProjectLoading(true, `10% · Detected project root: ${path}`);
         }
@@ -294,10 +311,29 @@ export default function App() {
         );
         if (!isCurrentRun()) return;
         setWikiResult(wikiSummary);
+        let detectedDatabaseSchema: DatabaseSchema | null = null;
+        let databaseViewEnabled = false;
+        try {
+          detectedDatabaseSchema = await withTimeout(
+            detectDatabaseStructure(path),
+            'Database structure detection',
+            60_000,
+          );
+        } catch {
+          detectedDatabaseSchema = null;
+        }
+        if (!isCurrentRun()) return;
+        setDatabaseSchema(detectedDatabaseSchema);
+        if (detectedDatabaseSchema) {
+          databaseViewEnabled = window.confirm('Database detected. Add Database view?');
+        }
+        setDatabaseViewEnabled(databaseViewEnabled);
         projectSnapshotCacheRef.current.set(path, {
           indexPathSummary: summary,
           searchIndexSummary: searchSummary,
           wikiSummary,
+          databaseSchema: detectedDatabaseSchema,
+          databaseViewEnabled,
         });
         if (summary.errors.length > 0) {
           setIndexError(summary.errors.join('\n'));
@@ -320,6 +356,8 @@ export default function App() {
       setIndexProgress,
       setProjectLoading,
       setProjectPath,
+      setDatabaseSchema,
+      setDatabaseViewEnabled,
       setSearchError,
       setSearchIndexResult,
       setWikiError,
@@ -341,12 +379,19 @@ export default function App() {
   }, [clearProjectData, setIndexProgress, setProjectLoading, setProjectPath]);
 
   useEffect(() => {
-    const lastProjectPath = window.localStorage.getItem(LAST_PROJECT_PATH_KEY);
-    if (!lastProjectPath) {
-      return;
-    }
-    void loadProject(lastProjectPath);
+    void getProviderSettings()
+      .then((settings) => {
+        if (settings.lastProjectPath) {
+          return loadProject(settings.lastProjectPath);
+        }
+        return undefined;
+      })
+      .catch(() => {});
   }, [loadProject]);
+
+  if (showSplash) {
+    return <SplashScreen onComplete={() => setShowSplash(false)} />;
+  }
 
   return (
     <div className="flex h-screen min-w-[1180px] flex-col overflow-hidden bg-app-background text-app-text">
