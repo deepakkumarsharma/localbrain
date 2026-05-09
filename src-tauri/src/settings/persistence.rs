@@ -12,6 +12,7 @@ pub fn save_settings(app: &AppHandle, settings: &ProviderSettings) -> Result<(),
     store.set("cloudEnabled", json!(settings.cloud_enabled));
     store.set("localModelPath", json!(settings.local_model_path));
     store.set("embeddingModelPath", json!(settings.embedding_model_path));
+    store.set("lastProjectPath", json!(settings.last_project_path));
 
     store.save().map_err(|e| e.to_string())?;
 
@@ -40,12 +41,16 @@ pub fn load_settings(app: &AppHandle) -> ProviderSettings {
     let embedding_model_path = store
         .get("embeddingModelPath")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let last_project_path = store
+        .get("lastProjectPath")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
 
     ProviderSettings {
         provider,
         cloud_enabled,
         local_model_path,
         embedding_model_path,
+        last_project_path,
     }
 }
 
@@ -55,5 +60,6 @@ fn default_settings() -> ProviderSettings {
         cloud_enabled: false,
         local_model_path: None,
         embedding_model_path: None,
+        last_project_path: None,
     }
 }

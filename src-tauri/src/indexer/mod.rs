@@ -467,6 +467,10 @@ fn is_extensionless_indexable_file(path: &Path) -> bool {
 }
 
 fn is_ignored_path(path: &Path) -> bool {
+    if is_generated_wiki_path(path) {
+        return true;
+    }
+
     path.components().any(|component| {
         let Component::Normal(value) = component else {
             return false;
@@ -501,6 +505,17 @@ fn is_ignored_path(path: &Path) -> bool {
             || value.ends_with(".o")
             || value.ends_with(".so")
     })
+}
+
+fn is_generated_wiki_path(path: &Path) -> bool {
+    let parts = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    parts
+        .windows(2)
+        .any(|window| window[0] == "docs" && window[1] == "wiki")
 }
 
 fn usize_to_i64(value: usize) -> i64 {
@@ -725,12 +740,17 @@ mod tests {
         assert!(!is_indexable_file(Path::new("docs/design.pdf")));
         assert!(is_ignored_path(Path::new("node_modules/pkg/index.ts")));
         assert!(is_ignored_path(Path::new(".localbrain/metadata.db")));
+        assert!(is_ignored_path(Path::new("docs/wiki/index.md")));
+        assert!(is_ignored_path(Path::new(
+            "/workspace/project/docs/wiki/auth.md"
+        )));
         assert!(is_ignored_path(Path::new(
             "packages/db/src/migrations/meta/0040_snapshot.json"
         )));
         assert!(is_ignored_path(Path::new(
             "src/components/__snapshots__/App.test.tsx.snap"
         )));
+        assert!(!is_ignored_path(Path::new("docs/architecture/auth.md")));
         assert!(!is_ignored_path(Path::new("src/snapshots/example.ts")));
         assert!(!is_ignored_path(Path::new("src/App.tsx")));
     }

@@ -1,5 +1,6 @@
 mod api;
 mod commands;
+mod database;
 mod embeddings;
 mod graph;
 mod indexer;
@@ -14,12 +15,13 @@ mod wiki;
 
 use api::{get_agent_api_status, start_agent_api, stop_agent_api, AgentApiState};
 use commands::{
-    ask_local, check_file_changed, clear_search_index, generate_wiki, get_app_version,
-    get_file_metadata, get_graph_context, get_graph_symbols, get_graph_view, get_index_status,
-    get_local_llm_status, get_provider_settings, get_wiki_content, hybrid_search, index_file,
-    index_file_to_graph, index_path, parse_source_file, rebuild_search_index, record_file_metadata,
-    resolve_project_root, search_code, set_embedding_model_path, set_local_model_path,
-    set_provider, set_workspace_root, start_local_llm, stop_local_llm,
+    ask_local, check_file_changed, clear_search_index, detect_database_structure, generate_wiki,
+    get_app_version, get_file_metadata, get_graph_context, get_graph_symbols, get_graph_view,
+    get_index_status, get_local_llm_status, get_provider_settings, get_wiki_content, hybrid_search,
+    index_file, index_file_to_graph, index_path, parse_source_file, rebuild_search_index,
+    record_file_metadata, resolve_project_root, search_code, set_embedding_model_path,
+    set_last_project_path, set_local_model_path, set_provider, set_workspace_root, start_local_llm,
+    stop_local_llm,
 };
 use settings::SettingsStore;
 use tauri::{Manager, RunEvent};
@@ -56,6 +58,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             check_file_changed,
+            detect_database_structure,
             ask_local,
             get_agent_api_status,
             get_app_version,
@@ -80,6 +83,7 @@ fn main() {
             get_local_llm_status,
             set_local_model_path,
             set_embedding_model_path,
+            set_last_project_path,
             set_provider,
             set_workspace_root,
             start_agent_api,

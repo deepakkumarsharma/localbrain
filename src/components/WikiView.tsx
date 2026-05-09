@@ -92,7 +92,7 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
                   Source file: <span className="font-mono text-app-text">{sourceFile}</span>
                 </p>
               </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-500">
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-app-success/40 bg-app-success/15 px-3 py-1.5 text-[11px] font-bold text-app-success">
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
                 Source-backed
               </span>
@@ -183,8 +183,8 @@ export function WikiView({ onGenerateWiki, isGeneratingWiki }: WikiViewProps) {
                       key={insight.label}
                       className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
                         insight.ok
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                          : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                          ? 'border-app-success/40 bg-app-success/15 text-app-success'
+                          : 'border-app-warning/40 bg-app-warning/15 text-app-warning'
                       }`}
                     >
                       {insight.label}

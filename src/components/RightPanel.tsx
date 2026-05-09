@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import { getAgentApiStatus } from '../lib/api';
 import type { ChatMessage, Citation } from '../lib/chat';
 import { askLocal } from '../lib/chat';
+import type { GraphContext } from '../lib/graph';
 import { getGraphContext } from '../lib/graph';
 import { getProviderSettings } from '../lib/settings';
 import { useAppStore } from '../store/useAppStore';
@@ -50,7 +51,7 @@ export function RightPanel() {
     void getGraphContext(activeSourcePath, 12)
       .then((context) => {
         if (!controller.signal.aborted) {
-          setGraphContext(context);
+          setGraphContext(normalizeGraphContext(context));
         }
       })
       .catch((error) => {
@@ -115,12 +116,18 @@ export function RightPanel() {
 
       const resolvedSourcePath = sourcePath === undefined ? activeSourcePath : sourcePath;
       const answer = await askLocal(trimmed, resolvedSourcePath);
-      setCitations(answer.citations);
-      setGraphContext(answer.graphContext);
+      const citations = normalizeCitations(answer.citations);
+      const graphContext = normalizeGraphContext(answer.graphContext);
+      const content =
+        typeof answer.answer === 'string' && answer.answer.trim()
+          ? answer.answer
+          : 'No local answer was returned. Try again after the index finishes refreshing.';
+      setCitations(citations);
+      setGraphContext(graphContext);
       replaceChatMessage(pendingId, {
         ...pendingMessage,
-        content: answer.answer,
-        citations: answer.citations,
+        content,
+        citations,
         status: 'complete',
       });
     } catch (error) {
@@ -165,10 +172,11 @@ export function RightPanel() {
   const canAskLocalBrain = Boolean(projectPath) && !isAsking;
   const knowledgeCachedLocally = Boolean(projectPath);
   const isReady = isLocalReady && knowledgeCachedLocally;
-  const dependentCount = graphContext.length;
+  const safeGraphContext = useMemo(() => normalizeGraphContext(graphContext), [graphContext]);
+  const dependentCount = safeGraphContext.length;
   const exportCount = Math.max(
     0,
-    graphContext.filter((item) => item.relation.toLowerCase().includes('contains')).length,
+    safeGraphContext.filter((item) => item.relation.toLowerCase().includes('contains')).length,
   );
   const summaryText = projectPath
     ? activeSourcePath
@@ -294,12 +302,12 @@ export function RightPanel() {
                 <span className="text-[12px] text-app-muted font-medium italic">
                   {!projectPath
                     ? 'Load a project to see relationships'
-                    : graphContext.length === 0
+                    : safeGraphContext.length === 0
                       ? 'No graph context loaded'
-                      : `${graphContext
+                      : `${safeGraphContext
                           .slice(0, 4)
                           .map((item) => item.symbol.name)
-                          .join(', ')}${graphContext.length > 4 ? '…' : ''}`}
+                          .join(', ')}${safeGraphContext.length > 4 ? '…' : ''}`}
                 </span>
               </div>
             </div>
@@ -360,11 +368,13 @@ export function RightPanel() {
                           className="chat-markdown text-[14px] leading-8 tracking-[0.01em] [&_h1]:mb-3 [&_h1]:mt-1 [&_h1]:text-[17px] [&_h1]:font-black [&_h1]:tracking-tight [&_h1]:text-app-accent [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-[12px] [&_h2]:font-black [&_h2]:uppercase [&_h2]:tracking-[0.12em] [&_h2]:text-app-accent [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[14px] [&_h3]:font-bold [&_h3]:text-app-text [&_strong]:font-extrabold [&_strong]:text-app-text [&_p]:mb-3 [&_p]:text-app-text/95 [&_ul]:mb-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_ol]:mb-4 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_li]:text-app-text/90 [&_li]:leading-7 [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-app-accent [&_blockquote]:pl-3 [&_blockquote]:text-app-muted [&_code]:rounded [&_code]:border [&_code]:border-app-border [&_code]:bg-app-panelSoft [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_pre]:mb-4 [&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-app-border [&_pre]:bg-app-panelSoft [&_pre]:p-3 [&_table]:my-3 [&_table]:block [&_table]:w-full [&_table]:max-w-[min(92vw,100%)] [&_table]:overflow-x-auto [&_table]:border-collapse [&_table]:rounded-lg [&_table]:border [&_table]:border-app-border [&_th]:whitespace-nowrap [&_th]:bg-app-panelSoft [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-extrabold [&_td]:min-w-[140px] [&_td]:px-3 [&_td]:py-2 [&_td]:align-top [&_td]:text-[13px]"
                           dangerouslySetInnerHTML={{
                             __html: sanitizeHtml(
-                              marked.parse(formatAssistantResponse(message.content)) as string,
+                              marked.parse(formatAssistantResponse(message.content), {
+                                async: false,
+                              }) as string,
                             ),
                           }}
                         />
-                        {message.citations.length > 0 ? (
+                        {message.citations?.length > 0 ? (
                           <div className="mt-3 border-t border-app-border pt-2">
                             <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-app-muted">
                               Evidence
@@ -445,23 +455,23 @@ export function RightPanel() {
       <div className="flex items-center gap-3 border-t border-app-border px-3 py-3 text-[9px] font-extrabold uppercase tracking-[0.07em] text-app-muted whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5">
           <span
-            className={`h-2 w-2 rounded-full ${isReady ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
+            className={`h-2 w-2 rounded-full ${isReady ? 'bg-app-success animate-pulse shadow-[0_0_8px_rgba(var(--color-app-success),0.45)]' : 'bg-app-error shadow-[0_0_6px_rgba(var(--color-app-error),0.35)]'}`}
           />
-          <span className={isReady ? 'text-emerald-300' : 'text-red-300'}>Ready</span>
+          <span className={isReady ? 'text-app-success' : 'text-app-error'}>Ready</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
-            className={`h-2 w-2 rounded-full ${knowledgeCachedLocally ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
+            className={`h-2 w-2 rounded-full ${knowledgeCachedLocally ? 'bg-app-success shadow-[0_0_8px_rgba(var(--color-app-success),0.45)]' : 'bg-app-error shadow-[0_0_6px_rgba(var(--color-app-error),0.35)]'}`}
           />
-          <span className={knowledgeCachedLocally ? 'text-emerald-300' : 'text-red-300'}>
+          <span className={knowledgeCachedLocally ? 'text-app-success' : 'text-app-error'}>
             Knowledge Cached Locally
           </span>
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span
-            className={`h-2 w-2 rounded-full ${isLocalReady ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.45)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.35)]'}`}
+            className={`h-2 w-2 rounded-full ${isLocalReady ? 'bg-app-success shadow-[0_0_8px_rgba(var(--color-app-success),0.45)]' : 'bg-app-error shadow-[0_0_6px_rgba(var(--color-app-error),0.35)]'}`}
           />
-          <span className={isLocalReady ? 'text-emerald-300' : 'text-red-300'}>
+          <span className={isLocalReady ? 'text-app-success' : 'text-app-error'}>
             Local Model Is Ready
           </span>
         </span>
@@ -564,6 +574,59 @@ function createChatMessage(role: ChatMessage['role'], content: string): ChatMess
   };
 }
 
+function normalizeCitations(value: unknown): Citation[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const citation = item as Partial<Citation>;
+    if (typeof citation.path !== 'string' || citation.path.length === 0) return [];
+
+    return [
+      {
+        path: citation.path,
+        title: typeof citation.title === 'string' ? citation.title : sourceFileName(citation.path),
+        snippet: typeof citation.snippet === 'string' ? citation.snippet : '',
+        startLine: typeof citation.startLine === 'number' ? citation.startLine : null,
+        endLine: typeof citation.endLine === 'number' ? citation.endLine : null,
+        score: typeof citation.score === 'number' ? citation.score : 0,
+      },
+    ];
+  });
+}
+
+function normalizeGraphContext(value: unknown): GraphContext[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const context = item as Partial<GraphContext>;
+    if (typeof context.path !== 'string' || context.path.length === 0) return [];
+    const symbol = context.symbol;
+
+    return [
+      {
+        path: context.path,
+        relation: typeof context.relation === 'string' ? context.relation : 'related',
+        symbol: {
+          name:
+            symbol && typeof symbol.name === 'string' ? symbol.name : sourceFileName(context.path),
+          kind: symbol?.kind ?? 'function',
+          parent: symbol?.parent ?? null,
+          source: symbol?.source ?? null,
+          range: {
+            startLine: typeof symbol?.range?.startLine === 'number' ? symbol.range.startLine : 1,
+            startColumn:
+              typeof symbol?.range?.startColumn === 'number' ? symbol.range.startColumn : 0,
+            endLine: typeof symbol?.range?.endLine === 'number' ? symbol.range.endLine : 1,
+            endColumn: typeof symbol?.range?.endColumn === 'number' ? symbol.range.endColumn : 0,
+          },
+        },
+      },
+    ];
+  });
+}
+
 function sanitizeHtml(value: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(value, 'text/html');
@@ -594,37 +657,52 @@ function sanitizeHtml(value: string): string {
     'div',
     'span',
   ]);
+  const allowedAttributes: Record<string, Set<string>> = {
+    th: new Set(['colspan', 'rowspan']),
+    td: new Set(['colspan', 'rowspan']),
+  };
 
-  doc.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
+  doc.body.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
     node.remove();
   });
 
-  doc.querySelectorAll('a, img').forEach((node) => {
+  doc.body.querySelectorAll('a, img, video, audio, source').forEach((node) => {
     const replacement = doc.createElement('span');
     replacement.textContent = node.textContent ?? '';
     node.replaceWith(replacement);
   });
 
-  doc.querySelectorAll<HTMLElement>('*').forEach((element) => {
+  doc.body.querySelectorAll<HTMLElement>('*').forEach((element) => {
     const tag = element.tagName.toLowerCase();
     if (!allowedTags.has(tag)) {
-      const parent = element.parentNode;
-      while (element.firstChild) {
-        parent?.insertBefore(element.firstChild, element);
-      }
-      parent?.removeChild(element);
+      element.replaceWith(...Array.from(element.childNodes));
       return;
     }
     const attrs = Array.from(element.attributes);
     for (const attr of attrs) {
       const name = attr.name.toLowerCase();
       const val = attr.value.trim().toLowerCase();
-      if (
+      const tagAllowlist = allowedAttributes[tag];
+      const isAllowedAttribute = tagAllowlist?.has(name) ?? false;
+      const blockedName =
         name.startsWith('on') ||
+        name === 'style' ||
+        name === 'class' ||
+        name === 'id' ||
         name === 'href' ||
         name === 'src' ||
-        val.startsWith('javascript:')
-      ) {
+        name === 'srcset' ||
+        name === 'poster' ||
+        name === 'formaction' ||
+        name === 'background' ||
+        name.startsWith('data-');
+      const blockedValueProtocol =
+        val.startsWith('javascript:') ||
+        val.startsWith('data:') ||
+        val.startsWith('http:') ||
+        val.startsWith('https:') ||
+        val.startsWith('//');
+      if (!isAllowedAttribute || blockedName || blockedValueProtocol) {
         element.removeAttribute(attr.name);
       }
     }

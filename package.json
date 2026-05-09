@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "llm:repair": "bash scripts/repair-local-llm.sh"
+    "llm:repair": "bash scripts/repair-local-llm.sh",
+    "release:check": "bash scripts/release-check.sh",
+    "release:ci": "npm run typecheck && npm run build"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.0",

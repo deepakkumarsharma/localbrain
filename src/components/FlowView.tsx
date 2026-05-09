@@ -151,25 +151,25 @@ export function FlowView() {
           <FlowMetric
             label="Files Seen"
             value={String(indexPathSummary?.filesSeen ?? 0)}
-            color="text-blue-400"
+            color="text-app-accent"
           />
-          <FlowMetric label="Changed" value={String(changed)} color="text-emerald-400" />
-          <FlowMetric label="Skipped" value={String(skipped)} color="text-amber-400" />
-          <FlowMetric label="Wiki Pages" value={String(wikiPages)} color="text-violet-400" />
+          <FlowMetric label="Changed" value={String(changed)} color="text-app-success" />
+          <FlowMetric label="Skipped" value={String(skipped)} color="text-app-warning" />
+          <FlowMetric label="Wiki Pages" value={String(wikiPages)} color="text-app-accent" />
         </div>
         <div className="mb-6 rounded-xl border border-app-border bg-app-panel p-4">
           <div className="flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-widest">
-            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-400">
+            <span className="rounded-full border border-app-success/40 bg-app-success/15 px-2 py-1 text-app-success">
               {hasModel ? 'LLM Ready' : 'LLM Waiting'}
             </span>
-            <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-blue-400">
+            <span className="rounded-full border border-app-accent/40 bg-app-accent/15 px-2 py-1 text-app-accent">
               {hasActiveFile ? 'File Focused' : 'No File Focus'}
             </span>
-            <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-violet-400">
+            <span className="rounded-full border border-app-accent/40 bg-app-accent/15 px-2 py-1 text-app-accent">
               {hasAsked ? 'Q&A Active' : 'Q&A Idle'}
             </span>
             <span
-              className={`rounded-full border px-2 py-1 ${errors > 0 ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}
+              className={`rounded-full border px-2 py-1 ${errors > 0 ? 'border-app-error/40 bg-app-error/15 text-app-error' : 'border-app-success/40 bg-app-success/15 text-app-success'}`}
             >
               {errors > 0 ? `${errors} Errors` : '0 Errors'}
             </span>

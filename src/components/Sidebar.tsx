@@ -300,11 +300,11 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
           {projectStatus ? (
             <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
               <span
-                className={`rounded-full border px-2 py-1 ${isProjectLoading ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'}`}
+                className={`rounded-full border px-2 py-1 ${isProjectLoading ? 'border-app-accent/40 bg-app-accent/15 text-app-accent' : 'border-app-success/40 bg-app-success/15 text-app-success'}`}
               >
                 {isProjectLoading ? 'Indexing' : 'Ready'}
               </span>
-              <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-violet-400">
+              <span className="rounded-full border border-app-accent/40 bg-app-accent/15 px-2 py-1 text-app-accent">
                 {indexedCount} indexed
               </span>
             </div>
@@ -330,7 +330,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-app-border bg-app-panel p-2 text-[12px] font-medium text-app-text">
             <Brain
-              className={`h-4 w-4 shrink-0 ${llmRunning ? 'text-emerald-400' : 'text-violet-400'}`}
+              className={`h-4 w-4 shrink-0 ${llmRunning ? 'text-app-success' : 'text-app-accent'}`}
             />
             <span className="truncate">
               {providerSettings?.localModelPath
@@ -338,12 +338,12 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                 : 'No model selected'}
             </span>
             <span
-              className={`ml-auto h-3.5 w-3.5 rounded-full ${llmRunning ? 'bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.7)]' : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.45)]'}`}
+              className={`ml-auto h-3.5 w-3.5 rounded-full ${llmRunning ? 'bg-app-success animate-pulse shadow-[0_0_10px_rgba(var(--color-app-success),0.6)]' : 'bg-app-warning shadow-[0_0_8px_rgba(var(--color-app-warning),0.45)]'}`}
               title={llmRunning ? 'Ready' : 'Not Ready'}
             />
           </div>
           <div className="mt-2 text-[11px] font-black uppercase tracking-widest">
-            <span className={llmRunning ? 'text-emerald-400' : 'text-amber-500'}>
+            <span className={llmRunning ? 'text-app-success' : 'text-app-warning'}>
               {llmRunning ? 'Ready' : 'Not Ready'}
             </span>
           </div>
@@ -351,7 +351,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
             {llmRunning ? (
               <button
                 onClick={stopServer}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500/10 border border-red-500/30 py-2 text-[12px] font-black text-red-400 hover:bg-red-500/20 transition-all uppercase tracking-wider"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-app-error/40 bg-app-error/15 py-2 text-[12px] font-black text-app-error hover:bg-app-error/20 transition-all uppercase tracking-wider"
               >
                 <Square className="h-3.5 w-3.5 fill-current" />
                 Stop Server
@@ -360,7 +360,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
               <button
                 onClick={startServer}
                 disabled={isStartingServer || !providerSettings?.localModelPath}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 py-2 text-[12px] font-black text-emerald-400 hover:bg-emerald-500/20 transition-all uppercase tracking-wider disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-app-success/40 bg-app-success/15 py-2 text-[12px] font-black text-app-success hover:bg-app-success/20 transition-all uppercase tracking-wider disabled:opacity-50"
               >
                 <Play className="h-3.5 w-3.5 fill-current" />
                 {isStartingServer ? 'Starting...' : 'Start Local Server'}
@@ -539,7 +539,7 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                       setActivePanel('graph');
                     }}
                   >
-                    <FileCode2 className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                    <FileCode2 className="h-4 w-4 shrink-0 text-app-accent" aria-hidden="true" />
                     <span className="truncate" title={item.label}>
                       {item.label}
                     </span>
@@ -561,8 +561,8 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
             .LOCALBRAIN
           </div>
           <div className="grid grid-cols-2 gap-2 p-1">
-            <Metric label="GRAPH" value={`${indexedCount || 0} nodes`} color="bg-blue-500" />
-            <Metric label="WIKI" value={`${wikiItems.length} pages`} color="bg-violet-500" />
+            <Metric label="GRAPH" value={`${indexedCount || 0} nodes`} color="bg-app-accent" />
+            <Metric label="WIKI" value={`${wikiItems.length} pages`} color="bg-app-success" />
           </div>
           <div className="mt-3 rounded-xl border border-app-border bg-app-background p-3">
             <div className="mb-2 flex items-center justify-between text-[11px] font-black uppercase tracking-widest text-app-muted">
@@ -572,11 +572,11 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
                 onClick={toggleTheme}
                 className={`rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${
                   theme === 'dark'
-                    ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-400'
-                    : 'border-amber-500/40 bg-amber-500/10 text-amber-500'
+                    ? 'border-app-accent/40 bg-app-accent/15 text-app-accent'
+                    : 'border-app-warning/40 bg-app-warning/15 text-app-warning'
                 }`}
               >
-                {theme === 'dark' ? 'Night Mode' : 'Day Mode'}
+                {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
               </button>
             </div>
             <div className="text-[11px] font-medium text-app-muted">
@@ -719,10 +719,10 @@ function TreeNodeRow({
 }
 
 function getFileColor(path: string) {
-  if (path.endsWith('.tsx') || path.endsWith('.ts')) return 'text-blue-400';
-  if (path.endsWith('.rs')) return 'text-orange-400';
-  if (path.endsWith('.json')) return 'text-yellow-400';
-  if (path.endsWith('.md')) return 'text-emerald-400';
+  if (path.endsWith('.tsx') || path.endsWith('.ts')) return 'text-app-accent';
+  if (path.endsWith('.rs')) return 'text-app-warning';
+  if (path.endsWith('.json')) return 'text-app-warning';
+  if (path.endsWith('.md')) return 'text-app-success';
   return 'text-app-muted';
 }
 

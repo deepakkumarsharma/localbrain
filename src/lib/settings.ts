@@ -7,6 +7,7 @@ export interface ProviderSettings {
   cloudEnabled: boolean;
   localModelPath: string | null;
   embeddingModelPath: string | null;
+  lastProjectPath: string | null;
 }
 
 export async function getProviderSettings() {
@@ -23,6 +24,10 @@ export async function setLocalModelPath(path: string | null) {
 
 export async function setEmbeddingModelPath(path: string | null) {
   return invoke<ProviderSettings>('set_embedding_model_path', { path });
+}
+
+export async function setLastProjectPath(path: string | null) {
+  return invoke<ProviderSettings>('set_last_project_path', { path });
 }
 
 export async function startLocalLlm() {
