@@ -329,8 +329,7 @@ fn parse_sql_schema(path: &Path, workspace_root: &Path) -> Result<DatabaseSchema
                 continue;
             }
 
-            if is_table_constraint_definition(&definition_lower)
-            {
+            if is_table_constraint_definition(&definition_lower) {
                 if let Some((local_col, ref_table, ref_col)) =
                     extract_sql_foreign_key(definition, &table_name)
                 {

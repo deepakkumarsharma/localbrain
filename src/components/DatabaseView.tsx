@@ -160,9 +160,10 @@ function TableDetails({ table }: { table: DatabaseTable }) {
     const interfaceName = sanitizeIdentifier(table.name, { pascalCase: true });
     const fields = table.columns.map((column) => {
       const type = toTypeScriptType(column.dataType, column.isNullable);
-      const key = isValidIdentifier(column.name) && !isReservedWord(column.name)
-        ? column.name
-        : JSON.stringify(column.name);
+      const key =
+        isValidIdentifier(column.name) && !isReservedWord(column.name)
+          ? column.name
+          : JSON.stringify(column.name);
       return `  ${key}: ${type};`;
     });
     return `export interface ${interfaceName} {\n${fields.join('\n')}\n}`;
@@ -216,13 +217,66 @@ function TableDetails({ table }: { table: DatabaseTable }) {
 }
 
 const RESERVED_WORDS = new Set([
-  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete',
-  'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for', 'function', 'if',
-  'import', 'in', 'instanceof', 'new', 'null', 'return', 'super', 'switch', 'this', 'throw',
-  'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'as', 'implements', 'interface',
-  'let', 'package', 'private', 'protected', 'public', 'static', 'yield', 'any', 'boolean',
-  'constructor', 'declare', 'get', 'module', 'require', 'number', 'set', 'string', 'symbol',
-  'type', 'from', 'of',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'as',
+  'implements',
+  'interface',
+  'let',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'static',
+  'yield',
+  'any',
+  'boolean',
+  'constructor',
+  'declare',
+  'get',
+  'module',
+  'require',
+  'number',
+  'set',
+  'string',
+  'symbol',
+  'type',
+  'from',
+  'of',
 ]);
 
 function isReservedWord(value: string) {

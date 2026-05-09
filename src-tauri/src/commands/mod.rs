@@ -4,6 +4,7 @@ use crate::llm::ChatAnswer;
 use crate::metadata::{FileChangeStatus, FileMetadata, IndexRunSummary, MetadataStore};
 use crate::parser::CodeSymbol;
 use crate::parser::{parse_file_with_display_path, ParsedFile};
+use crate::runbook::{RunbookDiscovery, RunbookProcessView, StartRunbookProcessRequest};
 use crate::search::{SearchIndexSummary, SearchResult};
 use crate::settings::{LlmProvider, ProviderSettings, SettingsStore};
 use crate::wiki::WikiSummary;
@@ -270,6 +271,91 @@ pub fn get_provider_settings(
     settings_store: tauri::State<SettingsStore>,
 ) -> Result<ProviderSettings, String> {
     settings_store.get()
+}
+
+#[tauri::command]
+pub fn discover_runbook_commands(
+    path: String,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<RunbookDiscovery, String> {
+    let workspace_path = metadata_store
+        .resolve_path(&path)
+        .map_err(|error| error.to_string())?;
+    let canonical = workspace_path
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve workspace path: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("workspace path is not a directory".to_string());
+    }
+    crate::runbook::discover_commands(&canonical)
+}
+
+#[tauri::command]
+pub fn start_runbook_process(
+    request: StartRunbookProcessRequest,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::runbook::RunbookState>,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<RunbookProcessView, String> {
+    let workspace_path = metadata_store
+        .resolve_path(&request.workspace_root)
+        .map_err(|error| error.to_string())?;
+    let canonical = workspace_path
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve workspace path: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("workspace path is not a directory".to_string());
+    }
+    crate::runbook::start_process(&app, &state, &canonical, request)
+}
+
+#[tauri::command]
+pub fn stop_runbook_process(
+    process_id: String,
+    state: tauri::State<'_, crate::runbook::RunbookState>,
+) -> Result<(), String> {
+    state.stop_process(&process_id)
+}
+
+#[tauri::command]
+pub fn restart_runbook_process(
+    process_id: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::runbook::RunbookState>,
+    metadata_store: tauri::State<'_, MetadataStore>,
+) -> Result<RunbookProcessView, String> {
+    let existing = state
+        .get_process(&process_id)
+        .ok_or_else(|| format!("runbook process not found: {process_id}"))?;
+    state.stop_process(&process_id)?;
+    let request = StartRunbookProcessRequest {
+        workspace_root: existing.workspace_root.clone(),
+        confirmed: Some(true),
+        command: crate::runbook::RunbookCommand {
+            id: existing.command_id.clone(),
+            name: existing.name.clone(),
+            command: existing.command.clone(),
+            cwd: existing.cwd.clone(),
+            source: existing.source.clone(),
+            kind: existing.kind.clone(),
+            requires_confirmation: false,
+            risk: "low".to_string(),
+        },
+    };
+    let workspace_path = metadata_store
+        .resolve_path(&request.workspace_root)
+        .map_err(|error| error.to_string())?;
+    let canonical = workspace_path
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve workspace path: {error}"))?;
+    crate::runbook::start_process(&app, &state, &canonical, request)
+}
+
+#[tauri::command]
+pub fn get_runbook_processes(
+    state: tauri::State<'_, crate::runbook::RunbookState>,
+) -> Vec<RunbookProcessView> {
+    state.get_process_views()
 }
 
 #[tauri::command]

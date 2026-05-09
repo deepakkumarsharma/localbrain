@@ -47,7 +47,8 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
     providerSettings,
     llmRunning,
     theme,
-    toggleTheme,
+    themePreference,
+    setThemePreference,
     projectPath,
     isProjectLoading,
     projectStatus,
@@ -567,16 +568,47 @@ export function Sidebar({ onSelectProject, onRemoveProject }: SidebarProps) {
           <div className="mt-3 rounded-xl border border-app-border bg-app-background p-3">
             <div className="mb-2 flex items-center justify-between text-[11px] font-black uppercase tracking-widest text-app-muted">
               Theme
+              <span className="text-[10px] font-black uppercase tracking-wider text-app-muted">
+                {themePreference === 'system'
+                  ? `System (${theme})`
+                  : themePreference === 'dark'
+                    ? 'Night'
+                    : 'Day'}
+              </span>
+            </div>
+            <div className="mb-2 grid grid-cols-3 gap-1.5">
               <button
                 type="button"
-                onClick={toggleTheme}
+                onClick={() => setThemePreference('system')}
                 className={`rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${
-                  theme === 'dark'
+                  themePreference === 'system'
                     ? 'border-app-accent/40 bg-app-accent/15 text-app-accent'
-                    : 'border-app-warning/40 bg-app-warning/15 text-app-warning'
+                    : 'border-app-border bg-app-panel text-app-muted'
                 }`}
               >
-                {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
+                System
+              </button>
+              <button
+                type="button"
+                onClick={() => setThemePreference('light')}
+                className={`rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${
+                  themePreference === 'light'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-500'
+                    : 'border-app-border bg-app-panel text-app-muted'
+                }`}
+              >
+                Day
+              </button>
+              <button
+                type="button"
+                onClick={() => setThemePreference('dark')}
+                className={`rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-wider transition-colors ${
+                  themePreference === 'dark'
+                    ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-400'
+                    : 'border-app-border bg-app-panel text-app-muted'
+                }`}
+              >
+                Night
               </button>
             </div>
             <div className="text-[11px] font-medium text-app-muted">

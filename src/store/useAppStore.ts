@@ -15,8 +15,9 @@ import type { DatabaseSchema } from '../lib/database';
 import type { ProviderSettings } from '../lib/settings';
 import type { WikiSummary } from '../lib/wiki';
 
-type ActivePanel = 'graph' | 'wiki' | 'flow' | 'database';
+type ActivePanel = 'graph' | 'wiki' | 'flow' | 'database' | 'runbook';
 type Theme = 'dark' | 'light';
+type ThemePreference = 'system' | 'dark' | 'light';
 
 function getSystemTheme(): Theme {
   if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -29,6 +30,7 @@ interface AppState {
   activePanel: ActivePanel;
   appVersion: string;
   theme: Theme;
+  themePreference: ThemePreference;
   activeSourcePath: string;
   lastFileChange: string | null;
   lastFileChangeAt: number | null;
@@ -67,6 +69,7 @@ interface AppState {
   setActivePanel: (panel: ActivePanel) => void;
   setAppVersion: (version: string) => void;
   setTheme: (theme: Theme) => void;
+  setThemePreference: (preference: ThemePreference) => void;
   toggleTheme: () => void;
   setActiveSourcePath: (path: string) => void;
   setLastFileChange: (path: string) => void;
@@ -107,6 +110,7 @@ export const useAppStore = create<AppState>((set) => ({
   activePanel: 'flow',
   appVersion: 'loading',
   theme: getSystemTheme(),
+  themePreference: 'system',
   activeSourcePath: '',
   lastFileChange: null,
   lastFileChangeAt: null,
@@ -145,7 +149,12 @@ export const useAppStore = create<AppState>((set) => ({
   setActivePanel: (panel) => set({ activePanel: panel }),
   setAppVersion: (version) => set({ appVersion: version }),
   setTheme: (theme) => set({ theme }),
-  toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+  setThemePreference: (preference) => set({ themePreference: preference }),
+  toggleTheme: () =>
+    set((state) => {
+      const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
+      return { themePreference: nextTheme, theme: nextTheme };
+    }),
   setActiveSourcePath: (path) => set({ activeSourcePath: path }),
   setLastFileChange: (path) => set({ lastFileChange: path, lastFileChangeAt: Date.now() }),
   setParsedFile: (parsedFile) => set({ parsedFile, parserError: null }),
